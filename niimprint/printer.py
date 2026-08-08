@@ -112,8 +112,11 @@ class PrinterClient:
             self._send(pkt)
         self.end_page_print()
         time.sleep(0.3)  # FIXME: Check get_print_status()
-        while not self.end_print():
+        for _ in range(600):  # local change: cap at ~60 s instead of hanging forever
+            if self.end_print():
+                return
             time.sleep(0.1)
+        raise RuntimeError("printer never confirmed end of print")
 
     def _encode_image(self, image: Image):
         img = ImageOps.invert(image.convert("L")).convert("1")
@@ -164,6 +167,17 @@ class PrinterClient:
             time.sleep(0.1)
         return resp
 
+    def _require(self, packet, what):
+        # Local change: upstream dies with "'NoneType' object has no attribute
+        # 'data'" when the printer stays silent. Say what actually happened.
+        if packet is None:
+            raise RuntimeError(
+                f"no response from printer to {what} — check it's powered ON "
+                "(USB only charges it; press the power button) and that this "
+                "is really the printer's port"
+            )
+        return packet
+
     def get_info(self, key):
         if packet := self._transceive(RequestCodeEnum.GET_INFO, bytes((key,)), key):
             match key:
@@ -208,7 +222,8 @@ class PrinterClient:
         }
 
     def heartbeat(self):
-        packet = self._transceive(RequestCodeEnum.HEARTBEAT, b"\x01")
+        packet = self._require(
+            self._transceive(RequestCodeEnum.HEARTBEAT, b"\x01"), "HEARTBEAT")
         closingstate = None
         powerlevel = None
         paperstate = None
@@ -244,45 +259,62 @@ class PrinterClient:
 
     def set_label_type(self, n):
         assert 1 <= n <= 3
-        packet = self._transceive(RequestCodeEnum.SET_LABEL_TYPE, bytes((n,)), 16)
+        packet = self._require(
+            self._transceive(RequestCodeEnum.SET_LABEL_TYPE, bytes((n,)), 16),
+            "SET_LABEL_TYPE")
         return bool(packet.data[0])
 
     def set_label_density(self, n):
         assert 1 <= n <= 5  # B21 has 5 levels, not sure for D11
-        packet = self._transceive(RequestCodeEnum.SET_LABEL_DENSITY, bytes((n,)), 16)
+        packet = self._require(
+            self._transceive(RequestCodeEnum.SET_LABEL_DENSITY, bytes((n,)), 16),
+            "SET_LABEL_DENSITY")
         return bool(packet.data[0])
 
     def start_print(self):
-        packet = self._transceive(RequestCodeEnum.START_PRINT, b"\x01")
+        packet = self._require(
+            self._transceive(RequestCodeEnum.START_PRINT, b"\x01"), "START_PRINT")
         return bool(packet.data[0])
 
     def end_print(self):
         packet = self._transceive(RequestCodeEnum.END_PRINT, b"\x01")
+        if packet is None:  # local change: still feeding — caller polls again
+            return False
         return bool(packet.data[0])
 
     def start_page_print(self):
-        packet = self._transceive(RequestCodeEnum.START_PAGE_PRINT, b"\x01")
+        packet = self._require(
+            self._transceive(RequestCodeEnum.START_PAGE_PRINT, b"\x01"),
+            "START_PAGE_PRINT")
         return bool(packet.data[0])
 
     def end_page_print(self):
-        packet = self._transceive(RequestCodeEnum.END_PAGE_PRINT, b"\x01")
+        packet = self._require(
+            self._transceive(RequestCodeEnum.END_PAGE_PRINT, b"\x01"),
+            "END_PAGE_PRINT")
         return bool(packet.data[0])
 
     def allow_print_clear(self):
-        packet = self._transceive(RequestCodeEnum.ALLOW_PRINT_CLEAR, b"\x01", 16)
+        packet = self._require(
+            self._transceive(RequestCodeEnum.ALLOW_PRINT_CLEAR, b"\x01", 16),
+            "ALLOW_PRINT_CLEAR")
         return bool(packet.data[0])
 
     def set_dimension(self, w, h):
-        packet = self._transceive(
-            RequestCodeEnum.SET_DIMENSION, struct.pack(">HH", w, h)
-        )
+        packet = self._require(
+            self._transceive(RequestCodeEnum.SET_DIMENSION, struct.pack(">HH", w, h)),
+            "SET_DIMENSION")
         return bool(packet.data[0])
 
     def set_quantity(self, n):
-        packet = self._transceive(RequestCodeEnum.SET_QUANTITY, struct.pack(">H", n))
+        packet = self._require(
+            self._transceive(RequestCodeEnum.SET_QUANTITY, struct.pack(">H", n)),
+            "SET_QUANTITY")
         return bool(packet.data[0])
 
     def get_print_status(self):
-        packet = self._transceive(RequestCodeEnum.GET_PRINT_STATUS, b"\x01", 16)
+        packet = self._require(
+            self._transceive(RequestCodeEnum.GET_PRINT_STATUS, b"\x01", 16),
+            "GET_PRINT_STATUS")
         page, progress1, progress2 = struct.unpack(">HBB", packet.data)
         return {"page": page, "progress1": progress1, "progress2": progress2}

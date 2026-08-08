@@ -311,6 +311,46 @@ def resolve_ports(args):
                  "(stable names live in /dev/serial/by-id/)")
 
 
+def open_transport(args):
+    from niimprint import BluetoothTransport, SerialTransport
+    if args.conn == "usb":
+        return SerialTransport(port=args.printer_addr or "auto")
+    return BluetoothTransport(args.printer_addr)
+
+
+def close_transport(args, transport):
+    try:  # release the port so the next job/retry can't hit "busy"
+        (transport._serial if args.conn == "usb" else transport._sock).close()
+    except Exception:
+        pass
+
+
+def wake_printer(client, tries=4):
+    """Heartbeat until the printer answers — nudges a dozing D110 awake."""
+    for i in range(tries):
+        try:
+            return client.heartbeat()
+        except RuntimeError:
+            if i == tries - 1:
+                raise
+            time.sleep(1.5)
+
+
+def probe_printer(args):
+    """Heartbeat the printer; returns None if healthy, else the error text."""
+    from niimprint import PrinterClient
+    transport = None
+    try:
+        transport = open_transport(args)
+        wake_printer(PrinterClient(transport), tries=2)
+        return None
+    except Exception as e:
+        return str(e)
+    finally:
+        if transport:
+            close_transport(args, transport)
+
+
 def print_label(img, args):
     if args.dry_run:
         img.save("/tmp/badge-test.png")
@@ -321,7 +361,7 @@ def print_label(img, args):
     img = img.transpose(Image.ROTATE_270 if args.rotate == 90 else Image.ROTATE_90)
     assert img.width <= HEAD_PX
 
-    from niimprint import BluetoothTransport, PrinterClient, SerialTransport
+    from niimprint import PrinterClient
 
     class ContinuousClient(PrinterClient):
         # print_image() hardcodes set_label_type(1) (gap-sensed die-cut);
@@ -333,21 +373,17 @@ def print_label(img, args):
     for attempt in (1, 2):
         transport = None
         try:
-            if args.conn == "usb":
-                transport = SerialTransport(port=args.printer_addr or "auto")
-            else:
-                transport = BluetoothTransport(args.printer_addr)
-            cls(transport).print_image(img, density=3)
+            transport = open_transport(args)
+            client = cls(transport)
+            wake_printer(client)  # fail here = power/port problem, not protocol
+            client.print_image(img, density=3)
             return True
         except Exception as e:
             print(f"print attempt {attempt} failed: {e}")
             time.sleep(2)
         finally:
-            try:  # release the port so the next job/retry can't hit "busy"
-                if transport:
-                    (transport._serial if args.conn == "usb" else transport._sock).close()
-            except Exception:
-                pass
+            if transport:
+                close_transport(args, transport)
     return False
 
 
@@ -358,8 +394,26 @@ class Kiosk:
         self.jobs = queue.Queue()
         self.last_print = {}  # nodenum -> monotonic time
         self.my_num = interface.myInfo.my_node_num
+        self.printer_lock = threading.Lock()
         threading.Thread(target=self.worker, daemon=True).start()
+        if not args.dry_run:
+            threading.Thread(target=self.keepalive, daemon=True).start()
         pub.subscribe(self.on_text, "meshtastic.receive.text")
+
+    def keepalive(self):
+        # D110s auto-power-off when idle. A heartbeat every 45 s resets that
+        # timer, and "printer went missing" shows up at the console before the
+        # next guest finds out the hard way.
+        alive = True
+        while True:
+            with self.printer_lock:
+                err = probe_printer(self.args)
+            if err and alive:
+                print(f"printer went missing: {err}")
+            elif not err and not alive:
+                print("printer is back")
+            alive = not err
+            time.sleep(45)
 
     def reply(self, dest, msg):
         try:
@@ -392,7 +446,9 @@ class Kiosk:
             sender, node = self.jobs.get()
             name = node.get("user", {}).get("longName", hex(sender))
             print(f"printing badge for {name} ({sender:#x})")
-            if print_label(make_label(node, self.args), self.args):
+            with self.printer_lock:
+                ok = print_label(make_label(node, self.args), self.args)
+            if ok:
                 print("  done")
             else:
                 self.reply(sender, "Printer jammed/unhappy. Poke the humans at the table.")
@@ -432,6 +488,10 @@ def main():
     if args.test:
         ok = print_label(make_label(me, args), args)
         sys.exit(0 if ok else 1)
+
+    if not args.dry_run:
+        err = probe_printer(args)
+        print(f"printer check: {err or 'OK, responding to heartbeat'}")
 
     Kiosk(interface, args)
     print('kiosk up — DM me "print" for a nametag')
