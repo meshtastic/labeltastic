@@ -30,15 +30,20 @@ python3 -m venv ~/badge
 `niimprint/` (MIT) — upstream's packaging pins Python to 3.11.x, which
 modern Pi OS is way past, and the code itself runs fine on 3.14.
 
-Figure out which serial port is the printer vs the radio
-(`ls /dev/ttyACM* /dev/ttyUSB*` before/after plugging the D110 in),
-then:
+The script sorts out which USB serial port is the radio and which is the
+printer by USB vendor/product IDs (the D110 is a CH340; radios are
+CP210x/CH9102/ESP32/nRF52/RP2040) and prints its port table at startup.
+Just run it:
 
 ```bash
-~/badge/bin/python badge_printer.py --test --dry-run                  # render only, writes /tmp/badge-test.png
-~/badge/bin/python badge_printer.py --test --printer-port /dev/ttyACM1   # one real test print
-~/badge/bin/python badge_printer.py --printer-port /dev/ttyACM1          # run the kiosk
+~/badge/bin/python badge_printer.py --test --dry-run     # render only, writes /tmp/badge-test.png
+~/badge/bin/python badge_printer.py --test               # one real test print
+~/badge/bin/python badge_printer.py                      # run the kiosk
 ```
+
+If it can't tell the ports apart, it exits with the table and tells you
+what to pass — use the stable names in `/dev/serial/by-id/` for
+`--serial` / `--printer-port` so a replug can't shuffle them.
 
 If labels come out flipped, add `--rotate 270`.
 
