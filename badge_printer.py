@@ -36,7 +36,7 @@ import qrcode
 from PIL import Image, ImageDraw, ImageFont
 from pubsub import pub
 
-from meshtastic.protobuf import admin_pb2, mesh_pb2
+from meshtastic.protobuf import admin_pb2, mesh_pb2, portnums_pb2
 
 HEAD_PX = 96            # D110 head is 96 dots (~12 mm @ 203 dpi)
 GAP_LABEL_LEN_PX = 236  # ~30 mm of a 30x15 die-cut label
@@ -440,7 +440,9 @@ class Kiosk:
         if not args.dry_run:
             threading.Thread(target=self.keepalive, daemon=True).start()
         self.last_rx = time.monotonic()
+        self.pending = {}  # nodenum -> monotonic time; waiting for their nodeinfo
         pub.subscribe(self.on_text, "meshtastic.receive.text")
+        pub.subscribe(self.on_user, "meshtastic.receive.user")
         pub.subscribe(self.on_any, "meshtastic.receive")
         pub.subscribe(self.on_conn_lost, "meshtastic.connection.lost")
         print(f"kiosk node num {self.my_num:#x}")
@@ -517,11 +519,51 @@ class Kiosk:
             return
         node = self.interface.nodesByNum.get(sender)
         if not node or not node.get("user", {}).get("id"):
-            self.reply(sender, "I heard you but don't have your nodeinfo yet. Wait a minute and try again.")
+            # Common on a huge mesh: small nodedbs evict constantly. Ask them
+            # for their nodeinfo; on_user prints the badge when it arrives.
+            self.pending[sender] = time.monotonic()
+            self.request_nodeinfo(sender)
+            self.reply(sender, "Don't know you yet — asking your node for its info. Badge prints when it answers.")
             return
         self.last_print[sender] = time.monotonic()
         self.jobs.put((sender, node))
         self.reply(sender, "Printing your nametag... come grab it!")
+
+    def request_nodeinfo(self, dest):
+        """Send our User with wantResponse — same exchange the phone apps use."""
+        try:
+            me = self.interface.nodesByNum.get(self.my_num, {}).get("user", {})
+            u = mesh_pb2.User()
+            u.id = me.get("id", "")
+            u.long_name = me.get("longName", "")
+            u.short_name = me.get("shortName", "")
+            self.interface.sendData(u, destinationId=dest,
+                                    portNum=portnums_pb2.PortNum.NODEINFO_APP,
+                                    wantResponse=True)
+        except Exception as e:
+            print(f"nodeinfo request to {dest:#x} failed: {e}")
+
+    def on_user(self, packet, interface):
+        try:
+            sender = packet.get("from")
+            asked = self.pending.pop(sender, None)
+            if asked is None:
+                return
+            if time.monotonic() - asked > 300:
+                return  # they asked ages ago; don't surprise-print
+            # build from the packet itself — nodedb update order isn't guaranteed
+            user = packet.get("decoded", {}).get("user", {})
+            node = self.interface.nodesByNum.get(sender)
+            if not node or not node.get("user", {}).get("id"):
+                node = {"num": sender, "user": user}
+            if not node.get("user", {}).get("id"):
+                return
+            self.last_print[sender] = time.monotonic()
+            self.jobs.put((sender, node))
+            self.reply(sender, "Got your info — printing your nametag!")
+        except Exception as e:
+            # a raising subscriber kills the meshtastic reader thread — never do
+            print(f"on_user error (ignored): {e}")
 
     def worker(self):
         while True:
