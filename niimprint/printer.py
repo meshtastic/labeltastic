@@ -55,7 +55,7 @@ PRINT_ERRORS = {
     0x05: "user cancel",
     0x06: "data error",
     0x07: "print head overheated",
-    0x08: "paper out exception",
+    0x08: "paper out exception (no paper past the sensor, or lid not latched)",
     0x09: "printer busy",
     0x0A: "no print head",
     0x0B: "temperature too low",
@@ -169,7 +169,8 @@ class PrinterClient:
 
     def _log_buffer(self, prefix: str, buff: bytes):
         msg = ":".join(f"{i:#04x}"[-2:] for i in buff)
-        logging.debug(f"{prefix}: {msg}")
+        # local change: named logger so --debug can single it out
+        logging.getLogger("niimprint").debug(f"{prefix}: {msg}")
 
     def _transceive(self, reqcode, data, respoffset=1):
         respcode = respoffset + reqcode

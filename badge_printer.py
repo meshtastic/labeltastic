@@ -233,21 +233,38 @@ def render_compact(node):
     return label
 
 
-def make_label(node, args):
-    return render_compact(node) if args.die_cut else render_banner(node)
+def roll_label_type(client, args):
+    """Ask the roll's RFID tag what's loaded: 1=die-cut gaps, 2=black mark,
+    3=continuous. Falls back to the command-line flags when unreadable
+    (third-party rolls have no tag)."""
+    if args.die_cut:
+        return 1
+    try:
+        rfid = client.get_rfid()
+    except Exception:
+        rfid = None
+    if rfid and rfid.get("type") in (1, 2, 3):
+        return rfid["type"]
+    return 3  # no tag — assume the endless roll they planned to use
+
+
+def make_label(node, label_type):
+    return render_compact(node) if label_type in (1, 2) else render_banner(node)
 
 
 # Neither meshtastic nor niimprint can auto-detect when BOTH a radio and the
 # printer are plugged in — each sees two serial ports and gives up (or grabs
 # the wrong one). Identify them by USB vendor/product ID instead.
-PRINTER_USB_IDS = {(0x1A86, 0x7523)}  # CH340 bridge in the D110
+PRINTER_USB_IDS = {(0x1A86, 0x7523)}  # CH340 bridge in older D110s
+PRINTER_USB_VIDS = {0x3513}  # Yichip: newer D110s expose the MCU's native USB
 RADIO_USB_VIDS = {0x10C4, 0x303A, 0x239A, 0x2886, 0x1915, 0x2E8A}
 RADIO_USB_IDS = {(0x1A86, 0x55D4)}  # CH9102 shares CH340's vendor id
 
 
 def looks_like_printer(p):
     name = f"{p.product or ''} {p.description or ''}".lower()
-    return (p.vid, p.pid) in PRINTER_USB_IDS or "niim" in name or "d110" in name
+    return ((p.vid, p.pid) in PRINTER_USB_IDS or p.vid in PRINTER_USB_VIDS
+            or "niim" in name or "d110" in name or "yichip" in name)
 
 
 def looks_like_radio(p):
@@ -351,35 +368,38 @@ def probe_printer(args):
             close_transport(args, transport)
 
 
-def print_label(img, args):
+def print_label(node, args):
     if args.dry_run:
+        img = make_label(node, 1 if args.die_cut else 3)
         img.save("/tmp/badge-test.png")
         print(f"dry run: wrote /tmp/badge-test.png ({img.width}x{img.height})")
         return True
 
-    # Feed direction: head is 96 wide, so rotate the banner upright.
-    img = img.transpose(Image.ROTATE_270 if args.rotate == 90 else Image.ROTATE_90)
-    assert img.width <= HEAD_PX
-
     from niimprint import PrinterClient
 
-    class ContinuousClient(PrinterClient):
-        # print_image() hardcodes set_label_type(1) (gap-sensed die-cut);
-        # continuous rolls are Niimbot label type 3.
-        def set_label_type(self, n):
-            try:
-                return super().set_label_type(3)
-            except RuntimeError as e:
-                print(f"continuous label type rejected ({e}); trying gap mode")
-                return super().set_label_type(1)
+    class BadgePrinter(PrinterClient):
+        # print_image() hardcodes set_label_type(1); use what the roll says.
+        label_type = 1
 
-    cls = PrinterClient if args.die_cut else ContinuousClient
+        def set_label_type(self, n):
+            return super().set_label_type(self.label_type)
+
     for attempt in (1, 2):
         transport = None
         try:
             transport = open_transport(args)
-            client = cls(transport)
-            wake_printer(client)  # fail here = power/port problem, not protocol
+            client = BadgePrinter(transport)
+            hb = wake_printer(client)  # fail here = power/port problem, not protocol
+            if hb and hb.get("closingstate") == 1:  # 0 = closed on D110-family
+                print("  WARNING: printer says its lid is OPEN — press it shut until it clicks")
+            client.label_type = roll_label_type(client, args)
+            img = make_label(node, client.label_type)
+            # Feed direction: head is 96 wide, so rotate the label upright.
+            img = img.transpose(Image.ROTATE_270 if args.rotate == 90 else Image.ROTATE_90)
+            assert img.width <= HEAD_PX
+            print(f"  roll type {client.label_type} -> "
+                  f"{'compact 30x15' if client.label_type in (1, 2) else 'banner'} "
+                  f"({img.height}px long)")
             client.print_image(img, density=3)
             return True
         except Exception as e:
@@ -451,7 +471,7 @@ class Kiosk:
             name = node.get("user", {}).get("longName", hex(sender))
             print(f"printing badge for {name} ({sender:#x})")
             with self.printer_lock:
-                ok = print_label(make_label(node, self.args), self.args)
+                ok = print_label(node, self.args)
             if ok:
                 print("  done")
             else:
@@ -477,7 +497,8 @@ def main():
 
     if args.debug:
         import logging
-        logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(message)s")
+        logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
+        logging.getLogger("niimprint").setLevel(logging.DEBUG)
 
     if not HAS_EMOJI:
         print("note: NotoEmoji-Regular.ttf not found — emoji will be stripped from labels")
@@ -495,7 +516,7 @@ def main():
     print(f"connected as {me.get('user', {}).get('longName', '?')} ({my_num:#x})")
 
     if args.test:
-        ok = print_label(make_label(me, args), args)
+        ok = print_label(me, args)
         sys.exit(0 if ok else 1)
 
     if not args.dry_run:
