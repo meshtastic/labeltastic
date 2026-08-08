@@ -23,8 +23,12 @@ Built at DEFCON 34. 🦞
 ```bash
 sudo apt install -y python3-venv fonts-dejavu-core
 python3 -m venv ~/badge
-~/badge/bin/pip install meshtastic qrcode pillow pypubsub git+https://github.com/AndBondStyle/niimprint
+~/badge/bin/pip install meshtastic qrcode pillow pypubsub pyserial
 ```
+
+[niimprint](https://github.com/AndBondStyle/niimprint) is vendored in
+`niimprint/` (MIT) — upstream's packaging pins Python to 3.11.x, which
+modern Pi OS is way past, and the code itself runs fine on 3.14.
 
 Figure out which serial port is the printer vs the radio
 (`ls /dev/ttyACM* /dev/ttyUSB*` before/after plugging the D110 in),
