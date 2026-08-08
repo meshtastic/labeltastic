@@ -439,23 +439,38 @@ class Kiosk:
         threading.Thread(target=self.worker, daemon=True).start()
         if not args.dry_run:
             threading.Thread(target=self.keepalive, daemon=True).start()
+        self.last_rx = time.monotonic()
         pub.subscribe(self.on_text, "meshtastic.receive.text")
-        if args.debug:  # per-packet firehose — a con mesh never shuts up
-            pub.subscribe(self.on_any, "meshtastic.receive")
+        pub.subscribe(self.on_any, "meshtastic.receive")
+        pub.subscribe(self.on_conn_lost, "meshtastic.connection.lost")
         print(f"kiosk node num {self.my_num:#x}")
 
+    def on_conn_lost(self, interface=None):
+        # the meshtastic lib won't reconnect on its own — die loudly so a
+        # wrapper loop can restart us
+        print("RADIO CONNECTION LOST — exiting so a restart loop can revive us")
+        os._exit(70)
+
     def on_any(self, packet, interface):
-        d = packet.get("decoded", {})
-        frm, to = packet.get("from"), packet.get("to")
-        if isinstance(frm, int) and isinstance(to, int):
-            print(f"rx {d.get('portnum', '?'):24} from={frm:#010x} to={to:#010x}")
-        else:
-            print(f"rx {d.get('portnum', '?')} {packet.get('fromId')} -> {packet.get('toId')}")
+        try:
+            self.last_rx = time.monotonic()
+            if not self.args.debug:
+                return  # per-packet firehose — a con mesh never shuts up
+            d = packet.get("decoded", {})
+            frm, to = packet.get("from"), packet.get("to")
+            if isinstance(frm, int) and isinstance(to, int):
+                print(f"rx {d.get('portnum', '?'):24} from={frm:#010x} to={to:#010x}")
+            else:
+                print(f"rx {d.get('portnum', '?')} {packet.get('fromId')} -> {packet.get('toId')}")
+        except Exception as e:
+            # a raising subscriber kills the meshtastic reader thread — never do
+            print(f"on_any error (ignored): {e}")
 
     def keepalive(self):
         # D110s auto-power-off when idle. A heartbeat every 45 s resets that
         # timer, and "printer went missing" shows up at the console before the
-        # next guest finds out the hard way.
+        # next guest finds out the hard way. Also watches the mesh rx stream:
+        # a busy mesh gone silent means the serial reader wedged.
         alive = True
         while True:
             with self.printer_lock:
@@ -465,15 +480,30 @@ class Kiosk:
             elif not err and not alive:
                 print("printer is back")
             alive = not err
+            quiet = time.monotonic() - self.last_rx
+            if quiet > 900:
+                print(f"no mesh packets for {int(quiet)}s — assuming wedged radio link, exiting for restart")
+                os._exit(71)
+            if quiet > 300:
+                print(f"WARNING: no mesh packets for {int(quiet)}s")
             time.sleep(45)
 
     def reply(self, dest, msg):
+        if dest is None:
+            return
         try:
             self.interface.sendText(msg, destinationId=dest)
         except Exception as e:
-            print(f"reply to {dest:#x} failed: {e}")
+            print(f"reply to {dest} failed: {e}")
 
     def on_text(self, packet, interface):
+        try:
+            self._on_text(packet)
+        except Exception as e:
+            # a raising subscriber kills the meshtastic reader thread — never do
+            print(f"on_text error (ignored): {e}")
+
+    def _on_text(self, packet):
         if packet.get("to") != self.my_num:
             return  # DMs only; broadcast triggers would melt the label roll at DEFCON
         sender = packet.get("from")
