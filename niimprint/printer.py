@@ -141,6 +141,66 @@ class PrinterClient:
             time.sleep(0.1)
         raise RuntimeError("printer never confirmed end of print")
 
+    def print_image_b1(self, image: Image, density: int = 3, label_type: int = 1,
+                       quantity: int = 1):
+        """Local addition: print sequence for newer 'B1-task' firmwares
+        (e.g. D110_M, device id 2320), per MultiMote/niimbluelib. These accept
+        the legacy packets with ACKs but print blank labels: they need a
+        7-byte START_PRINT, a 6-byte SET_DIMENSION, real black-pixel counts in
+        bitmap rows, and completion signalled via GET_PRINT_STATUS polling."""
+        self.set_label_density(density)
+        self.set_label_type(label_type)
+        self._require(
+            self._transceive(RequestCodeEnum.START_PRINT,
+                             struct.pack(">H5B", quantity, 0, 0, 0, 0, 0)),
+            "START_PRINT")
+        self.start_page_print()
+        self._require(
+            self._transceive(RequestCodeEnum.SET_DIMENSION,
+                             struct.pack(">HHH", image.height, image.width, quantity)),
+            "SET_DIMENSION")
+        for pkt in self._encode_image_b1(image):
+            self._send(pkt)
+        self.end_page_print()
+        for _ in range(200):  # ~60 s: poll until the page reports done
+            time.sleep(0.3)
+            try:
+                if self.get_print_status()["page"] >= quantity:
+                    break
+            except RuntimeError:
+                pass  # a busy printer may skip a poll
+        else:
+            raise RuntimeError("printer never reported print completion")
+        try:
+            self.end_print()
+        except RuntimeError:
+            pass
+
+    def _encode_image_b1(self, image: Image):
+        img = ImageOps.invert(image.convert("L")).convert("1")
+        width_bytes = math.ceil(img.width / 8)
+        chunk = width_bytes // 3  # pixel counts are split over thirds of the head
+        rows = []
+        for y in range(img.height):
+            line = [img.getpixel((x, y)) for x in range(img.width)]
+            bits = "".join("0" if p == 0 else "1" for p in line)
+            rows.append(int(bits, 2).to_bytes(width_bytes, "big"))
+        y = 0
+        while y < img.height:
+            data = rows[y]
+            repeat = 1  # identical consecutive rows compress into one packet
+            while y + repeat < img.height and repeat < 255 and rows[y + repeat] == data:
+                repeat += 1
+            if not any(data):
+                yield NiimbotPacket(0x84, struct.pack(">HB", y, repeat))
+            else:
+                parts = [0, 0, 0]
+                if chunk and width_bytes <= chunk * 3:
+                    for i, b in enumerate(data):
+                        parts[min(i // chunk, 2)] += b.bit_count()
+                yield NiimbotPacket(0x85, struct.pack(">H3BB", y, *parts, repeat) + data)
+            y += repeat
+
     def _encode_image(self, image: Image):
         img = ImageOps.invert(image.convert("L")).convert("1")
         for y in range(img.height):
@@ -347,5 +407,6 @@ class PrinterClient:
         packet = self._require(
             self._transceive(RequestCodeEnum.GET_PRINT_STATUS, b"\x01", 16),
             "GET_PRINT_STATUS")
-        page, progress1, progress2 = struct.unpack(">HBB", packet.data)
+        # local change: newer firmwares append extra bytes — read the first 4
+        page, progress1, progress2 = struct.unpack(">HBB", packet.data[:4])
         return {"page": page, "progress1": progress1, "progress2": progress2}
