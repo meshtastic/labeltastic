@@ -410,8 +410,10 @@ def print_label(node, args):
                   f"{'compact 30x15' if client.label_type in (1, 2) else 'banner'} "
                   f"({img.height}px long, devicetype {devicetype}, protocol v{pv})")
             if pv >= 3:
-                # D110_M family supports density 5 and prints invisibly at 3
-                client.print_image_new(img, density=5, label_type=client.label_type,
+                # Matches what official clients send v3+ printers. The legacy
+                # sequence also works on D110_M (verified) — this path is kept
+                # for its honest status-poll completion and official framing.
+                client.print_image_new(img, density=3, label_type=client.label_type,
                                        v4=pv >= 4)
             else:
                 client.print_image(img, density=3)
