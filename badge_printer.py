@@ -382,9 +382,6 @@ def print_label(node, args):
     # 2320 observed on a Yichip-USB D110 fw 10.51: reports 1 while printing).
     INVERTED_LID = {272, 273, 274, 512, 513, 514, 1792, 2304, 2320,
                     2560, 3584, 3840, 4352, 5120}
-    # Models speaking the newer "B1 task" protocol: they ACK the legacy print
-    # sequence but print blank labels. 2320 = D110_M (verified on hardware).
-    B1_TASK = {2320}
 
     class BadgePrinter(PrinterClient):
         # print_image() hardcodes set_label_type(1); use what the roll says.
@@ -408,11 +405,14 @@ def print_label(node, args):
             # Feed direction: head is 96 wide, so rotate the label upright.
             img = img.transpose(Image.ROTATE_270 if args.rotate == 90 else Image.ROTATE_90)
             assert img.width <= HEAD_PX
+            pv = client.get_protocol_version()
             print(f"  roll type {client.label_type} -> "
                   f"{'compact 30x15' if client.label_type in (1, 2) else 'banner'} "
-                  f"({img.height}px long, devicetype {devicetype})")
-            if devicetype in B1_TASK:
-                client.print_image_b1(img, density=3, label_type=client.label_type)
+                  f"({img.height}px long, devicetype {devicetype}, protocol v{pv})")
+            if pv >= 3:
+                # D110_M family supports density 5 and prints invisibly at 3
+                client.print_image_new(img, density=5, label_type=client.label_type,
+                                       v4=pv >= 4)
             else:
                 client.print_image(img, density=3)
             print("  printed!")

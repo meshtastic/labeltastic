@@ -30,6 +30,8 @@ class RequestCodeEnum(enum.IntEnum):
     GET_INFO = 64  # 0x40
     GET_RFID = 26  # 0x1A
     HEARTBEAT = 220  # 0xDC
+    CONNECT = 193  # 0xC1 (local addition: session handshake)
+    PRINTER_STATUS_DATA = 165  # 0xA5 (local addition: protocol version)
     SET_LABEL_TYPE = 35  # 0x23
     SET_LABEL_DENSITY = 33  # 0x21
     START_PRINT = 1  # 0x01
@@ -141,26 +143,54 @@ class PrinterClient:
             time.sleep(0.1)
         raise RuntimeError("printer never confirmed end of print")
 
-    def print_image_b1(self, image: Image, density: int = 3, label_type: int = 1,
-                       quantity: int = 1):
-        """Local addition: print sequence for newer 'B1-task' firmwares
-        (e.g. D110_M, device id 2320), per MultiMote/niimbluelib. These accept
-        the legacy packets with ACKs but print blank labels: they need a
-        7-byte START_PRINT, a 6-byte SET_DIMENSION, real black-pixel counts in
-        bitmap rows, and completion signalled via GET_PRINT_STATUS polling."""
+    def connect(self):
+        """Local addition: session handshake newer firmwares expect."""
+        return self._require(
+            self._transceive(RequestCodeEnum.CONNECT, b"\x01"), "CONNECT")
+
+    def get_protocol_version(self):
+        """Local addition: 0 for legacy printers, 3/4/5 for newer families
+        (decoding per MultiMote/niimbluelib getPrinterStatusData)."""
+        packet = self._transceive(RequestCodeEnum.PRINTER_STATUS_DATA, b"\x01", 16)
+        if packet and len(packet.data) > 12:
+            n = packet.data[11] * 100 + packet.data[12]
+            if 204 <= n < 300:
+                return 3
+            if 300 <= n < 302:
+                return 4
+            if n >= 302:
+                return 5
+        return 0
+
+    def print_image_new(self, image: Image, density: int = 3, label_type: int = 1,
+                        quantity: int = 1, v4: bool = False):
+        """Local addition: print sequence for newer firmwares (protocol v3+,
+        e.g. D110_M devicetype 2320), per MultiMote/niimbluelib. These accept
+        the legacy packets with ACKs but print blank labels. v3 ('B1 task'):
+        7-byte START_PRINT, 6-byte SET_DIMENSION, real black-pixel counts,
+        status-poll completion. v4 additionally: 9-byte START_PRINT, 13-byte
+        SET_DIMENSION, no START_PAGE_PRINT, fire-and-forget status query."""
+        self.connect()
         self.set_label_density(density)
         self.set_label_type(label_type)
+        start = (struct.pack(">H7B", quantity, 0, 0, 0, 0, 0, 0, 0) if v4
+                 else struct.pack(">H5B", quantity, 0, 0, 0, 0, 0))
         self._require(
-            self._transceive(RequestCodeEnum.START_PRINT,
-                             struct.pack(">H5B", quantity, 0, 0, 0, 0, 0)),
-            "START_PRINT")
-        self.start_page_print()
+            self._transceive(RequestCodeEnum.START_PRINT, start), "START_PRINT")
+        if v4:
+            # sacrificial fire-and-forget status query (niimblue does this);
+            # its late response is ignored by _transceive's type filtering
+            self._send(NiimbotPacket(RequestCodeEnum.GET_PRINT_STATUS, b"\x01"))
+            dim = struct.pack(">HHHHBBBH",
+                              image.height, image.width, quantity, 0, 0, 0, 0, 0)
+        else:
+            self.start_page_print()
+            dim = struct.pack(">HHH", image.height, image.width, quantity)
         self._require(
-            self._transceive(RequestCodeEnum.SET_DIMENSION,
-                             struct.pack(">HHH", image.height, image.width, quantity)),
-            "SET_DIMENSION")
-        for pkt in self._encode_image_b1(image):
+            self._transceive(RequestCodeEnum.SET_DIMENSION, dim), "SET_DIMENSION")
+        for pkt in self._encode_image_counted(image):
             self._send(pkt)
+            time.sleep(0.01)  # niimblue paces packets; native-USB units drop floods
         self.end_page_print()
         for _ in range(200):  # ~60 s: poll until the page reports done
             time.sleep(0.3)
@@ -173,10 +203,12 @@ class PrinterClient:
             raise RuntimeError("printer never reported print completion")
         try:
             self.end_print()
+            if v4:  # sacrificial heartbeat: some models drop the next packet
+                self._send(NiimbotPacket(RequestCodeEnum.HEARTBEAT, b"\x01"))
         except RuntimeError:
             pass
 
-    def _encode_image_b1(self, image: Image):
+    def _encode_image_counted(self, image: Image):
         img = ImageOps.invert(image.convert("L")).convert("1")
         width_bytes = math.ceil(img.width / 8)
         chunk = width_bytes // 3  # pixel counts are split over thirds of the head
