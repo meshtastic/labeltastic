@@ -376,6 +376,12 @@ def print_label(node, args):
         return True
 
     from niimprint import PrinterClient
+    from niimprint.printer import InfoEnum
+
+    # Models whose heartbeat lid bit is inverted (niimbluelib's list, plus
+    # 2320 observed on a Yichip-USB D110 fw 10.51: reports 1 while printing).
+    INVERTED_LID = {272, 273, 274, 512, 513, 514, 1792, 2304, 2320,
+                    2560, 3584, 3840, 4352, 5120}
 
     class BadgePrinter(PrinterClient):
         # print_image() hardcodes set_label_type(1); use what the roll says.
@@ -390,8 +396,11 @@ def print_label(node, args):
             transport = open_transport(args)
             client = BadgePrinter(transport)
             hb = wake_printer(client)  # fail here = power/port problem, not protocol
-            if hb and hb.get("closingstate") == 1:  # 0 = closed on D110-family
-                print("  WARNING: printer says its lid is OPEN — press it shut until it clicks")
+            lid = hb.get("closingstate") if hb else None
+            if lid is not None:
+                closed_value = 1 if client.get_info(InfoEnum.DEVICETYPE) in INVERTED_LID else 0
+                if lid != closed_value:
+                    print("  WARNING: printer says its lid is OPEN — press it shut until it clicks")
             client.label_type = roll_label_type(client, args)
             img = make_label(node, client.label_type)
             # Feed direction: head is 96 wide, so rotate the label upright.
@@ -401,6 +410,7 @@ def print_label(node, args):
                   f"{'compact 30x15' if client.label_type in (1, 2) else 'banner'} "
                   f"({img.height}px long)")
             client.print_image(img, density=3)
+            print("  printed!")
             return True
         except Exception as e:
             print(f"print attempt {attempt} failed: {e}")
