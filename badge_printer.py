@@ -440,6 +440,17 @@ class Kiosk:
         if not args.dry_run:
             threading.Thread(target=self.keepalive, daemon=True).start()
         pub.subscribe(self.on_text, "meshtastic.receive.text")
+        if args.debug:  # per-packet firehose — a con mesh never shuts up
+            pub.subscribe(self.on_any, "meshtastic.receive")
+        print(f"kiosk node num {self.my_num:#x}")
+
+    def on_any(self, packet, interface):
+        d = packet.get("decoded", {})
+        frm, to = packet.get("from"), packet.get("to")
+        if isinstance(frm, int) and isinstance(to, int):
+            print(f"rx {d.get('portnum', '?'):24} from={frm:#010x} to={to:#010x}")
+        else:
+            print(f"rx {d.get('portnum', '?')} {packet.get('fromId')} -> {packet.get('toId')}")
 
     def keepalive(self):
         # D110s auto-power-off when idle. A heartbeat every 45 s resets that
