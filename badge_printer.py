@@ -367,7 +367,11 @@ def print_label(img, args):
         # print_image() hardcodes set_label_type(1) (gap-sensed die-cut);
         # continuous rolls are Niimbot label type 3.
         def set_label_type(self, n):
-            return super().set_label_type(3)
+            try:
+                return super().set_label_type(3)
+            except RuntimeError as e:
+                print(f"continuous label type rejected ({e}); trying gap mode")
+                return super().set_label_type(1)
 
     cls = PrinterClient if args.die_cut else ContinuousClient
     for attempt in (1, 2):
@@ -468,7 +472,12 @@ def main():
     p.add_argument("--cooldown", type=int, default=600, help="per-node cooldown, seconds")
     p.add_argument("--test", action="store_true", help="print a badge for this node and exit")
     p.add_argument("--dry-run", action="store_true", help="write PNG instead of printing")
+    p.add_argument("--debug", action="store_true", help="hex-dump printer packets")
     args = p.parse_args()
+
+    if args.debug:
+        import logging
+        logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(message)s")
 
     if not HAS_EMOJI:
         print("note: NotoEmoji-Regular.ttf not found — emoji will be stripped from labels")

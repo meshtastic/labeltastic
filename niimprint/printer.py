@@ -46,6 +46,29 @@ def _packet_to_int(x):
     return int.from_bytes(x.data, "big")
 
 
+# Local addition: packet type 219 error codes, per MultiMote/niimbluelib.
+PRINT_ERRORS = {
+    0x01: "cover open",
+    0x02: "no paper detected (gap sensor found nothing — continuous roll in gap mode?)",
+    0x03: "low battery",
+    0x04: "battery exception",
+    0x05: "user cancel",
+    0x06: "data error",
+    0x07: "print head overheated",
+    0x08: "paper out exception",
+    0x09: "printer busy",
+    0x0A: "no print head",
+    0x0B: "temperature too low",
+    0x0C: "print head loose",
+    0x10: "wrong paper (RFID mismatch — printer rejects this roll)",
+    0x11: "set paper type failed",
+    0x12: "set print mode failed",
+    0x13: "set density failed",
+    0x14: "write RFID failed",
+    0x16: "communication exception",
+}
+
+
 class BaseTransport(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def read(self, length: int) -> bytes:
@@ -157,9 +180,16 @@ class PrinterClient:
         for _ in range(6):
             for packet in self._recv():
                 if packet.type == 219:
-                    raise ValueError
+                    # Local change: was a bare `raise ValueError` — say why.
+                    code = packet.data[0] if packet.data else -1
+                    raise RuntimeError(
+                        f"printer error {code:#04x}: "
+                        f"{PRINT_ERRORS.get(code, 'unknown error')} "
+                        f"(while sending {RequestCodeEnum(reqcode).name})")
                 elif packet.type == 0:
-                    raise NotImplementedError
+                    raise RuntimeError(
+                        f"printer says {RequestCodeEnum(reqcode).name} "
+                        "is not supported")
                 elif packet.type == respcode:
                     resp = packet
             if resp:
