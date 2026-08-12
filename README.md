@@ -3,9 +3,9 @@
 Meshtastic contact-QR nametag kiosk for a Raspberry Pi + a Niimbot label printer.
 DM the kiosk node the word `print` over the mesh and it prints your nametag:
 a black HELLO-MY-NODE-IS header, your short/long name (emoji included),
-node ID, and a shared-contact QR (`https://meshtastic.org/v/#...`) that
+node ID, a shared-contact QR (`https://meshtastic.org/v/#...`) that
 anyone can scan in the Meshtastic app (>= 2.6) to add you as a contact,
-PKC public key included.
+PKC public key included, and the Meshtastic M-PWRD mark.
 
 Built at DEFCON 34. 🦞
 
@@ -74,3 +74,13 @@ If labels come out flipped, add `--flip` (the old `--rotate 270` still works).
 - `NotoEmoji-Regular.ttf` is Google's monochrome Noto Emoji, vendored from
   [google/fonts](https://github.com/google/fonts/tree/main/ofl/notoemoji)
   under the SIL Open Font License 1.1.
+- The M-PWRD mark is redrawn with PIL primitives from `M-PWRD_BW_Border.svg`
+  in [meshtastic/design](https://github.com/meshtastic/design) — the geometry
+  is a dozen coordinates, which beats putting an SVG rasteriser (and native
+  cairo) on the Pi for one 40-dot glyph. It is supersampled and hard
+  thresholded rather than left anti-aliased, because niimprint dithers any
+  grey it is handed and that turns a mark this small into noise. The banner
+  gives it a column of its own and the B1 card drops it into the header band;
+  the compact 30x15 layout prints the bare Ms, no border and no wordmark,
+  since a full logo small enough to fit beside the node ID would set PWRD at
+  about 0.75 mm.
