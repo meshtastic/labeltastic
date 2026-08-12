@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Meshtastic contact-QR nametag printer for a Niimbot D110.
+"""Meshtastic contact-QR nametag printer for Niimbot label printers.
 
 DM the kiosk node the word "print" (or "badge"/"tag") and it prints a
 nametag for the sender: a black HELLO-MY-NODE-IS header, their short/long
@@ -8,14 +8,17 @@ shared-contact QR (https://meshtastic.org/v/#...) that anyone can scan in
 the Meshtastic app (>= 2.6) to add them as a contact — public key included,
 so the contact imports as PKC-verifiable.
 
-Default layout is a dynamic-length banner for continuous (endless) label
-rolls. Pass --die-cut for gap-sensed 30x15 mm labels (compact layout).
+Two printers, picked with --printer (see PROFILES):
+  d110  12 mm head. Dynamic-length banner on a continuous roll, or --die-cut
+        for gap-sensed 30x15 mm labels (compact layout).
+  b1    48 mm head. Landscape card on 50x30 mm labels.
 
 Usage on the Pi:
   python badge_printer.py --printer-port /dev/ttyACM1          # radio on auto serial
   python badge_printer.py --tcp localhost --printer-port ...   # meshtasticd
+  python badge_printer.py --printer b1 --die-cut --printer-port /dev/ttyACM1
   python badge_printer.py --test --printer-port /dev/ttyACM1   # print own badge, no mesh trigger
-  python badge_printer.py --test --dry-run                     # just write /tmp/badge-test.png
+  python badge_printer.py --test --dry-run --sample            # render only, no radio needed
 
 Emoji need NotoEmoji-Regular.ttf next to this script (scp it along).
 """
@@ -29,6 +32,8 @@ import re
 import sys
 import threading
 import time
+from collections import namedtuple
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
@@ -38,8 +43,7 @@ from pubsub import pub
 
 from meshtastic.protobuf import admin_pb2, mesh_pb2, portnums_pb2
 
-HEAD_PX = 96            # D110 head is 96 dots (~12 mm @ 203 dpi)
-GAP_LABEL_LEN_PX = 236  # ~30 mm of a 30x15 die-cut label
+DOTS_PER_MM = 8         # 203 dpi heads, near enough (7.992 dots/mm)
 MAX_NAME_PX = 340       # cap on the name column in banner mode
 TRIGGER = re.compile(r"\b(print|badge|tag)\b", re.I)
 
@@ -157,17 +161,19 @@ def contact_url(node, max_name_bytes=None):
     return f"https://meshtastic.org/v/#{b64}"
 
 
-def qr_image(node, side=HEAD_PX):
-    # Modules must stay >= 2 printer dots (0.25 mm) or phones can't scan the
-    # thermal print. Long names push the QR past version 7 and modules to
-    # 1 dot, so progressively truncate the long name in the QR payload only —
-    # the printed text keeps the full name.
+def qr_image(node, side, min_module_px=2):
+    # Modules must stay >= min_module_px printer dots (2 dots = 0.25 mm) or
+    # phones can't scan the thermal print. Long names push the QR past version 7
+    # and modules below the floor, so progressively truncate the long name in the
+    # QR payload only — the printed text keeps the full name. A bigger `side`
+    # wants a bigger floor too, or a long name silently buys extra modules
+    # instead of the extra dots per module the room was meant for.
     for cut in (None, 32, 24, 16):
         url = contact_url(node, cut)
         qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_L, border=1)
         qr.add_data(url)
         qr.make(fit=True)
-        if (qr.modules_count + 2) * 2 <= side:
+        if (qr.modules_count + 2) * min_module_px <= side:
             break
     # Integer module size that fits the head; label margin supplies the quiet zone.
     qr.box_size = max(1, side // (qr.modules_count + 2))
@@ -175,6 +181,21 @@ def qr_image(node, side=HEAD_PX):
     canvas = Image.new("L", (side, side), 255)
     canvas.paste(img, ((side - img.width) // 2, (side - img.height) // 2))
     return canvas
+
+
+# --sample: the public key is 2/3 of the QR payload, so a node without one
+# renders a comfortably small QR and proves nothing about the real thing. The
+# emoji and the long name exercise clean()/draw_mixed() and fit()'s ellipsizing.
+SAMPLE_NODE = {
+    "num": 0xDEADBEEF,
+    "user": {
+        "id": "!deadbeef",
+        "longName": "Wandering Packet Goblin",
+        "shortName": "🐛 WPG",
+        "publicKey": base64.b64encode(bytes(range(32))).decode(),
+        "hwModel": "HELTEC_V3",
+    },
+}
 
 
 def name_lines(node):
@@ -187,8 +208,11 @@ def name_lines(node):
     return short, long_, nid
 
 
-def render_banner(node):
-    """Dynamic-length badge for continuous rolls: HELLO header, name, QR."""
+def render_banner(node, profile):
+    """Dynamic-length badge for continuous rolls: HELLO header, name, QR.
+
+    Reads along the feed, so the short axis is the head width."""
+    across = profile.head_px
     probe = ImageDraw.Draw(Image.new("L", (1, 1)))
     short, long_, nid = name_lines(node)
     short, s1 = fit(probe, short, MAX_NAME_PX, 46)
@@ -201,11 +225,11 @@ def render_banner(node):
     hdr_w = int(max(probe.textlength("HELLO", font=text_font(26)),
                     probe.textlength("MY NODE IS", font=text_font(12)))) + 20
 
-    total = hdr_w + 12 + name_w + 12 + HEAD_PX + 4
-    label = Image.new("L", (total, HEAD_PX), 255)
+    total = hdr_w + 12 + name_w + 12 + across + 4
+    label = Image.new("L", (total, across), 255)
     d = ImageDraw.Draw(label)
 
-    d.rectangle([0, 0, hdr_w, HEAD_PX - 1], fill=0)
+    d.rectangle([0, 0, hdr_w, across - 1], fill=0)
     cx = hdr_w // 2
     d.text((cx, 32), "HELLO", font=text_font(26), anchor="mm", fill=255)
     d.text((cx, 62), "MY NODE IS", font=text_font(12), anchor="mm", fill=255)
@@ -215,17 +239,20 @@ def render_banner(node):
     draw_mixed(d, (x, 66), long_, s2, 0)
     draw_mixed(d, (x, 87), nid, s3, 0)
 
-    label.paste(qr_image(node), (total - HEAD_PX - 4, 0))
+    label.paste(qr_image(node, across), (total - across - 4, 0))
     return label
 
 
-def render_compact(node):
-    """Fixed 30x15 layout for gap-sensed die-cut labels: QR left, text right."""
-    label = Image.new("L", (GAP_LABEL_LEN_PX, HEAD_PX), 255)
-    label.paste(qr_image(node), (0, 0))
+def render_compact(node, profile):
+    """Fixed 30x15 layout for gap-sensed die-cut labels: QR left, text right.
+
+    Reads along the feed, same as the banner."""
+    across, length = profile.head_px, profile.die_len_px
+    label = Image.new("L", (length, across), 255)
+    label.paste(qr_image(node, across), (0, 0))
     d = ImageDraw.Draw(label)
-    x = HEAD_PX + 6
-    width = GAP_LABEL_LEN_PX - x - 2
+    x = across + 6
+    width = length - x - 2
     short, long_, nid = name_lines(node)
     for text, start, y in ((short, 34, 22), (long_, 16, 56), (nid, 12, 81)):
         text, size = fit(d, text, width, start)
@@ -233,23 +260,156 @@ def render_compact(node):
     return label
 
 
-def roll_label_type(client, args):
+CARD_BAND_PX = 56    # 7 mm header band. Bigger burns a lot of dots at once:
+                     # 384x56 is already ~21k, vs the D110 banner's ~10k.
+CARD_MARGIN_PX = 16  # 2 mm — the 48 mm head may sit off-centre on 50 mm stock,
+                     # so keep ink away from both edges and let it clip white.
+CARD_QR_PX = 168
+
+
+def render_card(node, profile):
+    """Landscape card for 50x30 labels: header band on top, name block, QR right.
+
+    Unlike the D110 layouts this reads ACROSS the head, so the canvas is already
+    in printer orientation and its layout rotation is 0."""
+    w, h = profile.head_px, profile.die_len_px
+    label = Image.new("L", (w, h), 255)
+    d = ImageDraw.Draw(label)
+
+    d.rectangle([0, 0, w - 1, CARD_BAND_PX - 1], fill=0)
+    cx = w // 2
+    d.text((cx, 19), "HELLO", font=text_font(26), anchor="mm", fill=255)
+    d.text((cx, 43), "MY NODE IS", font=text_font(15), anchor="mm", fill=255)
+
+    qr_x = w - CARD_MARGIN_PX - CARD_QR_PX
+    label.paste(qr_image(node, CARD_QR_PX, min_module_px=3), (qr_x, CARD_BAND_PX + 6))
+
+    x = CARD_MARGIN_PX
+    width = qr_x - 8 - x
+    short, long_, nid = name_lines(node)
+    for text, start, y in ((short, 56, 110), (long_, 24, 168), (nid, 20, 206)):
+        text, size = fit(d, text, width, start, min_size=12)
+        draw_mixed(d, (x, y), text, size, 0)
+    return label
+
+
+# render_* above, table below: the profiles name the renderers.
+Layout = namedtuple("Layout", "render rotate_cw desc")
+
+
+@dataclass(frozen=True)
+class Profile:
+    """A printer and the label stock it runs.
+
+    head_px is the head's dot count verbatim. die_len_px is round(mm * 8) less a
+    few dots of registration slack, so the raster never overruns the die-cut gap
+    (30 mm -> 236, not 240).
+
+    Note the label descriptions name axes in opposite orders, because that is how
+    the stock is sold: the D110's "30x15" is feed x across, the B1's "50x30" is
+    across x feed.
+    """
+    name: str
+    head_px: int             # dots across the head
+    die_len_px: int          # feed rows for one die-cut label
+    die_layout: Layout       # label types 1 (gap) and 2 (black mark)
+    roll_layout: Layout      # label type 3 (continuous)
+    default_label_type: int  # used when the roll has no readable RFID tag
+    max_density: int
+    min_protocol: int        # force the v3+ print path even if the printer lies
+    desc: str
+
+    def __post_init__(self):
+        # _encode_image_counted splits the black-pixel counts over thirds of the
+        # head and silently ships zeros unless ceil(width/8) divides by 3; widths
+        # off a byte boundary additionally shift every row (its to_bytes right-
+        # aligns). Both are blank or garbled prints with no error, so refuse the
+        # geometry here rather than debug it on the label roll.
+        if self.head_px % 24:
+            raise ValueError(f"{self.name}: head_px must be a multiple of 24, "
+                             f"got {self.head_px}")
+
+
+PROFILES = {
+    "d110": Profile(
+        name="d110", head_px=96, die_len_px=236,
+        die_layout=Layout(render_compact, 90, "compact 30x15"),
+        roll_layout=Layout(render_banner, 90, "banner"),
+        default_label_type=3,  # no tag — assume the endless roll they planned on
+        max_density=3,         # upstream caps d11/d110/b18 here
+        min_protocol=0, desc="12 mm head, 30x15 mm die-cut or continuous roll"),
+    "b1": Profile(
+        name="b1", head_px=384, die_len_px=236,
+        # 50x30 stock is 50 mm across the roll and 30 mm along the feed, so the
+        # card is laid out across the head. Continuous rolls print the same
+        # fixed-length page: a banner scaled 4x would be 30 cm per badge.
+        die_layout=Layout(render_card, 0, "card 50x30"),
+        roll_layout=Layout(render_card, 0, "card 50x30"),
+        default_label_type=1,  # 50x30 is die-cut; type 3 would drift every label
+        max_density=5,
+        min_protocol=3, desc="48 mm head, 50x30 mm die-cut labels"),
+}
+
+
+def roll_label_type(client, args, profile):
     """Ask the roll's RFID tag what's loaded: 1=die-cut gaps, 2=black mark,
-    3=continuous. Falls back to the command-line flags when unreadable
-    (third-party rolls have no tag)."""
+    3=continuous. Falls back to the command-line flags, then the profile's
+    default, when unreadable (third-party rolls have no tag)."""
     if args.die_cut:
         return 1
     try:
         rfid = client.get_rfid()
-    except Exception:
+    except Exception as e:
+        # bare pass here used to hide a get_rfid() parse error as a wrong default
+        print(f"  RFID read failed ({e}) — assuming label type "
+              f"{profile.default_label_type}")
         rfid = None
     if rfid and rfid.get("type") in (1, 2, 3):
         return rfid["type"]
-    return 3  # no tag — assume the endless roll they planned to use
+    return profile.default_label_type
 
 
-def make_label(node, label_type):
-    return render_compact(node) if label_type in (1, 2) else render_banner(node)
+def pick_layout(profile, label_type):
+    return profile.die_layout if label_type in (1, 2) else profile.roll_layout
+
+
+# PIL names rotations counter-clockwise; every angle here is clockwise.
+CW_TRANSPOSE = {90: Image.ROTATE_270, 180: Image.ROTATE_180, 270: Image.ROTATE_90}
+
+
+def to_printer_orientation(img, layout, profile, flip=False):
+    """Turn an authored label into what the head prints: width = dots across the
+    head, height = feed rows (see set_dimension's arg order in niimprint)."""
+    cw = (layout.rotate_cw + (180 if flip else 0)) % 360
+    if cw:
+        img = img.transpose(CW_TRANSPOSE[cw])
+    if img.width > profile.head_px:
+        raise ValueError(
+            f"LAYOUT BUG: {layout.desc} is {img.width} dots across but the "
+            f"{profile.name} head is only {profile.head_px} — not a printer fault")
+    if img.width < profile.head_px:  # centre it rather than hug one edge
+        canvas = Image.new("L", (profile.head_px, img.height), 255)
+        canvas.paste(img, ((profile.head_px - img.width) // 2, 0))
+        img = canvas
+    return img
+
+
+def dump_packets(img):
+    """Run the real encoder over the printer-oriented image and report what went
+    out. With no B1 to hand this is the only check on the wire format that a
+    dry run can make — the PNG proves the layout and nothing else."""
+    from niimprint import PrinterClient
+
+    pkts = list(PrinterClient._encode_image_counted(None, img))
+    inked = [p for p in pkts if p.type == 0x85]
+    # data[2:5] are the per-third black-pixel counts; all-zero on an inked row
+    # means ceil(width/8) didn't divide by 3 and the counts were dropped
+    blind = sum(1 for p in inked if p.data[2:5] == b"\x00\x00\x00")
+    print(f"  encoder: {len(pkts)} packets for {img.width}x{img.height}, "
+          f"max data {max((len(p.data) for p in pkts), default=0)} B, "
+          f"{len(inked)} inked rows, {blind} missing per-third counts")
+    if pkts:
+        print(f"  first packet: {':'.join(f'{b:02x}' for b in pkts[0].to_bytes())}")
 
 
 # Neither meshtastic nor niimprint can auto-detect when BOTH a radio and the
@@ -263,8 +423,12 @@ RADIO_USB_IDS = {(0x1A86, 0x55D4)}  # CH9102 shares CH340's vendor id
 
 def looks_like_printer(p):
     name = f"{p.product or ''} {p.description or ''}".lower()
+    # "b1" needs word boundaries — as a bare substring it matches half the USB
+    # descriptors on earth. The B1's own VID/PID is unknown here, and a CH9102-
+    # based one would collide with RADIO_USB_IDS, so pass --printer-port.
     return ((p.vid, p.pid) in PRINTER_USB_IDS or p.vid in PRINTER_USB_VIDS
-            or "niim" in name or "d110" in name or "yichip" in name)
+            or "niim" in name or "d110" in name or "yichip" in name
+            or re.search(r"\bb1\b", name) is not None)
 
 
 def looks_like_radio(p):
@@ -281,7 +445,7 @@ def stable_path(dev):
     return dev
 
 
-def resolve_ports(args):
+def resolve_ports(args, need_radio=True):
     """Assign the radio and printer ports; die with a port table if ambiguous."""
     from serial.tools.list_ports import comports
 
@@ -319,7 +483,7 @@ def resolve_ports(args):
         print(f"printer -> bluetooth {args.printer_addr}")
 
     missing = []
-    if not args.tcp and not args.serial:
+    if need_radio and not args.tcp and not args.serial:
         missing.append("--serial <radio port>")
     if args.conn == "usb" and not args.printer_addr and not args.dry_run:
         missing.append("--printer-port <printer port>")
@@ -343,7 +507,7 @@ def close_transport(args, transport):
 
 
 def wake_printer(client, tries=4):
-    """Heartbeat until the printer answers — nudges a dozing D110 awake."""
+    """Heartbeat until the printer answers — nudges a dozing printer awake."""
     for i in range(tries):
         try:
             return client.heartbeat()
@@ -368,11 +532,16 @@ def probe_printer(args):
             close_transport(args, transport)
 
 
-def print_label(node, args):
+def print_label(node, args, profile):
+    density = min(args.density, profile.max_density)
     if args.dry_run:
-        img = make_label(node, 1 if args.die_cut else 3)
-        img.save("/tmp/badge-test.png")
-        print(f"dry run: wrote /tmp/badge-test.png ({img.width}x{img.height})")
+        # no printer, so no RFID: fall back the same way roll_label_type would
+        layout = pick_layout(profile, 1 if args.die_cut else profile.default_label_type)
+        img = layout.render(node, profile)
+        img.save(args.out)
+        print(f"dry run: wrote {args.out} ({img.width}x{img.height}, {layout.desc}, "
+              f"{profile.name} density {density})")
+        dump_packets(to_printer_orientation(img, layout, profile, args.flip))
         return True
 
     from niimprint import PrinterClient
@@ -400,23 +569,24 @@ def print_label(node, args):
             lid = hb.get("closingstate") if hb else None
             if lid is not None and lid != (1 if devicetype in INVERTED_LID else 0):
                 print("  WARNING: printer says its lid is OPEN — press it shut until it clicks")
-            client.label_type = roll_label_type(client, args)
-            img = make_label(node, client.label_type)
-            # Feed direction: head is 96 wide, so rotate the label upright.
-            img = img.transpose(Image.ROTATE_270 if args.rotate == 90 else Image.ROTATE_90)
-            assert img.width <= HEAD_PX
+            client.label_type = roll_label_type(client, args, profile)
+            layout = pick_layout(profile, client.label_type)
+            img = to_printer_orientation(layout.render(node, profile), layout,
+                                         profile, args.flip)
             pv = client.get_protocol_version()
-            print(f"  roll type {client.label_type} -> "
-                  f"{'compact 30x15' if client.label_type in (1, 2) else 'banner'} "
+            print(f"  roll type {client.label_type} -> {layout.desc} "
                   f"({img.height}px long, devicetype {devicetype}, protocol v{pv})")
-            if pv >= 3:
+            if pv >= 3 or profile.min_protocol >= 3:
                 # Matches what official clients send v3+ printers. The legacy
                 # sequence also works on D110_M (verified) — this path is kept
                 # for its honest status-poll completion and official framing.
-                client.print_image_new(img, density=3, label_type=client.label_type,
-                                       v4=pv >= 4)
+                # min_protocol forces it for families that need it: the legacy
+                # path sends uncompressed zero-count rows, which this hardware
+                # ACKs and then prints blank.
+                client.print_image_new(img, density=density,
+                                       label_type=client.label_type, v4=pv >= 4)
             else:
-                client.print_image(img, density=3)
+                client.print_image(img, density=density)
             print("  printed!")
             return True
         except Exception as e:
@@ -429,9 +599,10 @@ def print_label(node, args):
 
 
 class Kiosk:
-    def __init__(self, interface, args):
+    def __init__(self, interface, args, profile):
         self.interface = interface
         self.args = args
+        self.profile = profile
         self.jobs = queue.Queue()
         self.last_print = {}  # nodenum -> monotonic time
         self.my_num = interface.myInfo.my_node_num
@@ -469,7 +640,7 @@ class Kiosk:
             print(f"on_any error (ignored): {e}")
 
     def keepalive(self):
-        # D110s auto-power-off when idle. A heartbeat every 45 s resets that
+        # These printers auto-power-off when idle. A heartbeat every 45 s resets that
         # timer, and "printer went missing" shows up at the console before the
         # next guest finds out the hard way. Also watches the mesh rx stream:
         # a busy mesh gone silent means the serial reader wedged.
@@ -571,7 +742,7 @@ class Kiosk:
             name = node.get("user", {}).get("longName", hex(sender))
             print(f"printing badge for {name} ({sender:#x})")
             with self.printer_lock:
-                ok = print_label(node, self.args)
+                ok = print_label(node, self.args, self.profile)
             if ok:
                 print("  done")
             else:
@@ -583,17 +754,34 @@ def main():
     p.add_argument("--serial", default=None, help="radio serial port (default: auto-detect)")
     p.add_argument("--tcp", default=None, help="meshtasticd host instead of serial (e.g. localhost)")
     p.add_argument("--conn", choices=["usb", "bluetooth"], default="usb", help="printer connection")
+    p.add_argument("--printer", choices=sorted(PROFILES), default="d110",
+                   help="printer model and label stock: "
+                        + "; ".join(f"{k} = {v.desc}" for k, v in sorted(PROFILES.items())))
     p.add_argument("--printer-port", dest="printer_addr", default=None,
                    help="printer serial port (SET THIS — auto-detect may grab the radio!) or BT MAC")
     p.add_argument("--die-cut", action="store_true",
-                   help="gap-sensed 30x15 labels instead of a continuous roll")
-    p.add_argument("--rotate", type=int, choices=[90, 270], default=90,
-                   help="flip to 270 if labels come out upside down")
+                   help="gap-sensed die-cut labels instead of a continuous roll")
+    p.add_argument("--flip", action="store_true",
+                   help="rotate 180 if labels come out upside down")
+    p.add_argument("--rotate", type=int, choices=[90, 270], default=None,
+                   help=argparse.SUPPRESS)  # deprecated spelling of --flip
+    p.add_argument("--density", type=int, choices=range(1, 6), default=3,
+                   metavar="1-5", help="print density, clamped to the model's max")
     p.add_argument("--cooldown", type=int, default=600, help="per-node cooldown, seconds")
     p.add_argument("--test", action="store_true", help="print a badge for this node and exit")
+    p.add_argument("--sample", action="store_true",
+                   help="print/render a canned node — needs no radio")
     p.add_argument("--dry-run", action="store_true", help="write PNG instead of printing")
+    p.add_argument("--out", default="/tmp/badge-test.png", help="--dry-run PNG path")
     p.add_argument("--debug", action="store_true", help="hex-dump printer packets")
     args = p.parse_args()
+
+    if args.rotate == 270:  # --rotate 90 was the default, 270 meant "upside down"
+        args.flip = True
+    profile = PROFILES[args.printer]
+    if args.density > profile.max_density:
+        print(f"note: {profile.name} maxes out at density {profile.max_density}, "
+              f"clamping {args.density}")
 
     if args.debug:
         import logging
@@ -602,6 +790,13 @@ def main():
 
     if not HAS_EMOJI:
         print("note: NotoEmoji-Regular.ttf not found — emoji will be stripped from labels")
+
+    if args.sample:
+        # layout/protocol check with no mesh in the room: skip the radio entirely
+        if not args.dry_run:
+            resolve_ports(args, need_radio=False)
+        sys.exit(0 if print_label(SAMPLE_NODE, args, profile) else 1)
+
     resolve_ports(args)
 
     if args.tcp:
@@ -616,14 +811,14 @@ def main():
     print(f"connected as {me.get('user', {}).get('longName', '?')} ({my_num:#x})")
 
     if args.test:
-        ok = print_label(me, args)
+        ok = print_label(me, args, profile)
         sys.exit(0 if ok else 1)
 
     if not args.dry_run:
         err = probe_printer(args)
         print(f"printer check: {err or 'OK, responding to heartbeat'}")
 
-    Kiosk(interface, args)
+    Kiosk(interface, args, profile)
     print('kiosk up — DM me "print" for a nametag')
     while True:
         time.sleep(60)
