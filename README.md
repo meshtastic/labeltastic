@@ -79,8 +79,8 @@ If labels come out flipped, add `--flip` (the old `--rotate 270` still works).
   is a dozen coordinates, which beats putting an SVG rasteriser (and native
   cairo) on the Pi for one 40-dot glyph. It is supersampled and hard
   thresholded rather than left anti-aliased, because niimprint dithers any
-  grey it is handed and that turns a mark this small into noise. The banner
-  gives it a column of its own and the B1 card drops it into the header band;
-  the compact 30x15 layout prints the bare Ms, no border and no wordmark,
-  since a full logo small enough to fit beside the node ID would set PWRD at
-  about 0.75 mm.
+  grey it is handed and that turns a mark this small into noise. Only the
+  banner prints the whole logo, in a column of its own — it can just grow.
+  The B1 card and the compact 30x15 layout print the bare Ms, no border and
+  no wordmark: PWRD is a fifth of the frame's height, so a logo sized to fit
+  the space those two had spare sets it under a millimetre.

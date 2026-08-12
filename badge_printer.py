@@ -218,9 +218,10 @@ def mpwrd_logo(height, invert=False, frame=True):
     mark this small into noise. Jagged diagonals print better than dithered
     ones. invert=True for dropping it into one of the black header bands.
 
-    frame=False gives the bare Ms — no border, no wordmark. That's what fits on
-    30x15, where a full logo small enough to sit beside the node ID would set
-    PWRD at about 0.75 mm and print it as a smudge."""
+    frame=False gives the bare Ms — no border, no wordmark. PWRD is only a
+    fifth of the frame's height, so anywhere the whole logo has to fit a gap
+    rather than claim its own space it lands under a millimetre and prints as a
+    smudge. Only the banner, which can just grow, gets the framed version."""
     mx, my, mw, mh = LOGO_MARK
     box_w, box_h = (LOGO_W, LOGO_H) if frame else (mw, mh)
     s = height * 4 / box_h
@@ -349,7 +350,9 @@ CARD_BAND_PX = 56    # 7 mm header band. Bigger burns a lot of dots at once:
 CARD_MARGIN_PX = 16  # 2 mm — the 48 mm head may sit off-centre on 50 mm stock,
                      # so keep ink away from both edges and let it clip white.
 CARD_QR_PX = 168
-CARD_LOGO_PX = 42    # rides in the header band, so it costs the card no space
+CARD_LOGO_PX = 42    # bare Ms again, filling the band: the wordmark is only
+                     # 1/5 of the frame's height, so even here it came out
+                     # under a millimetre. Rides in the band, costing no space.
 
 
 def render_card(node, profile):
@@ -365,7 +368,7 @@ def render_card(node, profile):
     cx = w // 2
     d.text((cx, 19), "HELLO", font=text_font(26), anchor="mm", fill=255)
     d.text((cx, 43), "MY NODE IS", font=text_font(15), anchor="mm", fill=255)
-    label.paste(mpwrd_logo(CARD_LOGO_PX, invert=True),
+    label.paste(mpwrd_logo(CARD_LOGO_PX, invert=True, frame=False),
                 (CARD_MARGIN_PX, (CARD_BAND_PX - CARD_LOGO_PX) // 2))
 
     qr_x = w - CARD_MARGIN_PX - CARD_QR_PX
