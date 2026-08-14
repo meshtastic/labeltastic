@@ -26,6 +26,8 @@ jobs:
       - name: Ruff lint
         # via the dev extra so CI lints with the same pinned ruff as local dev
         run: uv run --extra dev ruff check --output-format=github .
+      - name: Ruff format
+        run: uv run --extra dev ruff format --check .
       - name: SPDX headers
         run: python scripts/check_spdx.py
 

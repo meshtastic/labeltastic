@@ -23,9 +23,14 @@ def looks_like_printer(p):
     # "b1" needs word boundaries — as a bare substring it matches half the USB
     # descriptors on earth. The B1's own VID/PID is unknown here, and a CH9102-
     # based one would collide with RADIO_USB_IDS, so pass --printer-port.
-    return ((p.vid, p.pid) in PRINTER_USB_IDS or p.vid in PRINTER_USB_VIDS
-            or "niim" in name or "d110" in name or "yichip" in name
-            or re.search(r"\bb1\b", name) is not None)
+    return (
+        (p.vid, p.pid) in PRINTER_USB_IDS
+        or p.vid in PRINTER_USB_VIDS
+        or "niim" in name
+        or "d110" in name
+        or "yichip" in name
+        or re.search(r"\bb1\b", name) is not None
+    )
 
 
 def looks_like_radio(p):
@@ -71,7 +76,8 @@ def resolve_ports(args, need_radio=True):
     print("serial ports:")
     for p in ports:
         tags = (" [printer?]" if looks_like_printer(p) else "") + (
-            " [radio?]" if looks_like_radio(p) else "")
+            " [radio?]" if looks_like_radio(p) else ""
+        )
         print(f"  {p.device}  {p.vid:04x}:{p.pid:04x}  {p.description}{tags}")
     print(f"radio   -> {args.tcp or args.serial or 'UNRESOLVED'}")
     if args.conn == "usb":
@@ -85,12 +91,15 @@ def resolve_ports(args, need_radio=True):
     if args.conn == "usb" and not args.printer_addr and not args.dry_run:
         missing.append("--printer-port <printer port>")
     if missing:
-        sys.exit(f"can't tell the ports apart — pass {' and '.join(missing)} "
-                 "(stable names live in /dev/serial/by-id/)")
+        sys.exit(
+            f"can't tell the ports apart — pass {' and '.join(missing)} "
+            "(stable names live in /dev/serial/by-id/)"
+        )
 
 
 def open_transport(args):
     from ._vendor.niimprint import BluetoothTransport, SerialTransport
+
     if args.conn == "usb":
         return SerialTransport(port=args.printer_addr or "auto")
     return BluetoothTransport(args.printer_addr)

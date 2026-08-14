@@ -36,9 +36,17 @@ def test_head_width_divides_into_thirds_of_whole_bytes(name):
 
 def test_a_head_off_the_24_dot_grid_is_refused_at_construction():
     with pytest.raises(ValueError, match="multiple of 24"):
-        Profile(name="bad", head_px=100, die_len_px=236,
-                die_layout=dummy_layout(), roll_layout=dummy_layout(),
-                default_label_type=1, max_density=3, min_protocol=0, desc="")
+        Profile(
+            name="bad",
+            head_px=100,
+            die_len_px=236,
+            die_layout=dummy_layout(),
+            roll_layout=dummy_layout(),
+            default_label_type=1,
+            max_density=3,
+            min_protocol=0,
+            desc="",
+        )
 
 
 @pytest.mark.parametrize("label_type,expected", [(1, "die"), (2, "die"), (3, "roll")])
@@ -88,8 +96,11 @@ def test_every_layout_ends_up_exactly_head_wide(name):
     profile = PROFILES[name]
     for layout in (profile.die_layout, profile.roll_layout):
         # Author at the layout's own orientation, then turn it to face the head.
-        authored = ((profile.die_len_px, profile.head_px) if layout.rotate_cw
-                    else (profile.head_px, profile.die_len_px))
+        authored = (
+            (profile.die_len_px, profile.head_px)
+            if layout.rotate_cw
+            else (profile.head_px, profile.die_len_px)
+        )
         img = to_printer_orientation(Image.new("L", authored, 255), layout, profile)
         assert img.width == profile.head_px
 
@@ -101,8 +112,8 @@ def test_a_narrow_label_is_centred_rather_than_hugging_an_edge():
     out = to_printer_orientation(img, layout, profile)
     assert out.width == 384
     left = (384 - 100) // 2
-    assert out.getpixel((left - 1, 25)) == 255   # padding
-    assert out.getpixel((left + 1, 25)) == 0     # the label itself
+    assert out.getpixel((left - 1, 25)) == 255  # padding
+    assert out.getpixel((left + 1, 25)) == 0  # the label itself
 
 
 def test_an_oversized_label_is_a_layout_bug_not_a_printer_fault():

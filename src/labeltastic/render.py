@@ -13,9 +13,9 @@ from .contact import name_lines, qr_image
 from .fonts import draw_mixed, fit, mixed_len, text_font
 from .logo import mpwrd_logo
 
-MAX_NAME_PX = 340       # cap on the name column in banner mode
+MAX_NAME_PX = 340  # cap on the name column in banner mode
 
-BANNER_LOGO_PX = 64   # a column of its own on the endless roll
+BANNER_LOGO_PX = 64  # a column of its own on the endless roll
 COMPACT_LOGO_PX = 24  # bare Ms, so this is height of mark not of frame
 
 
@@ -29,12 +29,19 @@ def render_banner(node, profile):
     short, s1 = fit(probe, short, MAX_NAME_PX, 46)
     long_, s2 = fit(probe, long_, MAX_NAME_PX, 20)
     nid, s3 = fit(probe, nid, MAX_NAME_PX, 13)
-    name_w = int(max(mixed_len(probe, short, s1),
-                     mixed_len(probe, long_, s2),
-                     mixed_len(probe, nid, s3)))
+    name_w = int(
+        max(mixed_len(probe, short, s1), mixed_len(probe, long_, s2), mixed_len(probe, nid, s3))
+    )
 
-    hdr_w = int(max(probe.textlength("HELLO", font=text_font(26)),
-                    probe.textlength("MY NODE IS", font=text_font(12)))) + 20
+    hdr_w = (
+        int(
+            max(
+                probe.textlength("HELLO", font=text_font(26)),
+                probe.textlength("MY NODE IS", font=text_font(12)),
+            )
+        )
+        + 20
+    )
 
     # The roll is continuous, so the mark buys its own column rather than
     # squeezing the name — it can't go in the header band, which is 96 dots
@@ -75,21 +82,27 @@ def render_compact(node, profile):
     # Only the node ID gives up width to the mark. Node IDs are 9 characters, so
     # the column it leaves is still roomy, while the names keep the full width —
     # they are what anyone actually reads off the badge.
-    for text, start, y, w in ((short, 34, 22, width), (long_, 16, 56, width),
-                              (nid, 12, 81, width - logo.width - 6)):
+    for text, start, y, w in (
+        (short, 34, 22, width),
+        (long_, 16, 56, width),
+        (nid, 12, 81, width - logo.width - 6),
+    ):
         text, size = fit(d, text, w, start)
         draw_mixed(d, (x, y), text, size, 0)
     return label
 
 
-CARD_BAND_PX = 56    # 7 mm header band. Bigger burns a lot of dots at once:
-                     # 384x56 is already ~21k, vs the D110 banner's ~10k.
-CARD_MARGIN_PX = 16  # 2 mm — the 48 mm head may sit off-centre on 50 mm stock,
-                     # so keep ink away from both edges and let it clip white.
+# 7 mm header band. Bigger burns a lot of dots at once: 384x56 is already
+# ~21k, vs the D110 banner's ~10k.
+CARD_BAND_PX = 56
+# 2 mm — the 48 mm head may sit off-centre on 50 mm stock, so keep ink away
+# from both edges and let it clip white.
+CARD_MARGIN_PX = 16
 CARD_QR_PX = 168
-CARD_LOGO_PX = 42    # bare Ms again, filling the band: the wordmark is only
-                     # 1/5 of the frame's height, so even here it came out
-                     # under a millimetre. Rides in the band, costing no space.
+# Bare Ms again, filling the band: the wordmark is only 1/5 of the frame's
+# height, so even here it came out under a millimetre. Rides in the band,
+# costing no space.
+CARD_LOGO_PX = 42
 
 
 def render_card(node, profile):
@@ -105,8 +118,10 @@ def render_card(node, profile):
     cx = w // 2
     d.text((cx, 19), "HELLO", font=text_font(26), anchor="mm", fill=255)
     d.text((cx, 43), "MY NODE IS", font=text_font(15), anchor="mm", fill=255)
-    label.paste(mpwrd_logo(CARD_LOGO_PX, invert=True, frame=False),
-                (CARD_MARGIN_PX, (CARD_BAND_PX - CARD_LOGO_PX) // 2))
+    label.paste(
+        mpwrd_logo(CARD_LOGO_PX, invert=True, frame=False),
+        (CARD_MARGIN_PX, (CARD_BAND_PX - CARD_LOGO_PX) // 2),
+    )
 
     qr_x = w - CARD_MARGIN_PX - CARD_QR_PX
     label.paste(qr_image(node, CARD_QR_PX, min_module_px=3), (qr_x, CARD_BAND_PX + 6))

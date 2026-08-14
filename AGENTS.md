@@ -71,8 +71,10 @@ Say so explicitly when a change is untested on hardware.
 - **Auto-detect can grab the wrong port.** A CH9102 radio shares CH340's vendor id, so
   vendor-only matching would hand the radio to the printer driver. Pass `--printer-port`
   when in doubt; prefer the stable names in `/dev/serial/by-id/`.
-- **`ruff format` is not run here** and running it would reformat the column-aligned layout
-  code into something much harder to check against the printer's dot maths. Lint only.
+- **Multi-line trailing comments don't survive `ruff format`.** The continuation lines get
+  dedented to column 0 and then read as belonging to the next statement — which, in a file
+  full of geometry constants, silently attaches the wrong reasoning to the wrong number.
+  Write anything longer than one line as a block comment above the statement.
 - **The emoji font ships in the package** (`assets/NotoEmoji-Regular.ttf`, OFL-1.1). The text
   font does not — it comes from the host, so exact pixels differ between a Pi, a CI runner
   and your laptop. Don't write pixel-golden tests.

@@ -87,19 +87,19 @@ def test_the_page_has_ink_in_every_third_of_its_length(profile_name, label_type)
 def test_a_blank_page_encodes_as_empty_rows_not_inked_ones():
     pkts = encode(Image.new("L", (96, 32), 255))
     assert pkts
-    assert all(p.type == 0x84 for p in pkts)   # 0x84 = blank-row run
+    assert all(p.type == 0x84 for p in pkts)  # 0x84 = blank-row run
 
 
 def test_identical_rows_compress_into_one_packet():
     img = Image.new("L", (96, 40), 255)
     for y in range(40):
-        img.putpixel((0, y), 0)   # 40 identical inked rows
+        img.putpixel((0, y), 0)  # 40 identical inked rows
     inked = [p for p in encode(img) if p.type == 0x85]
     assert len(inked) == 1
     # header is >H3BB: row, three per-third counts, repeat — then the row bytes
     row, c0, c1, c2, repeat = struct.unpack(">H3BB", inked[0].data[:6])
     assert (row, repeat) == (0, 40)
-    assert (c0, c1, c2) == (1, 0, 0)   # the single lit pixel, in the first third
+    assert (c0, c1, c2) == (1, 0, 0)  # the single lit pixel, in the first third
     assert len(inked[0].data) == 6 + 96 // 8
 
 

@@ -84,7 +84,7 @@ def test_qr_image_is_square_and_padded_to_the_requested_side():
 def test_name_lines_falls_back_when_nothing_printable_survives():
     node = {"num": 0xDEADBEEF, "user": {"id": "!deadbeef", "shortName": "‍", "longName": ""}}
     short, long_, nid = name_lines(node)
-    assert short == "BEEF"   # low 16 bits, uppercase hex
+    assert short == "BEEF"  # low 16 bits, uppercase hex
     assert long_ == "?"
     assert nid == "!deadbeef"
 

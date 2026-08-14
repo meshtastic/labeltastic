@@ -19,9 +19,11 @@ def dump_packets(img):
     # data[2:5] are the per-third black-pixel counts; all-zero on an inked row
     # means ceil(width/8) didn't divide by 3 and the counts were dropped
     blind = sum(1 for p in inked if p.data[2:5] == b"\x00\x00\x00")
-    print(f"  encoder: {len(pkts)} packets for {img.width}x{img.height}, "
-          f"max data {max((len(p.data) for p in pkts), default=0)} B, "
-          f"{len(inked)} inked rows, {blind} missing per-third counts")
+    print(
+        f"  encoder: {len(pkts)} packets for {img.width}x{img.height}, "
+        f"max data {max((len(p.data) for p in pkts), default=0)} B, "
+        f"{len(inked)} inked rows, {blind} missing per-third counts"
+    )
     if pkts:
         print(f"  first packet: {':'.join(f'{b:02x}' for b in pkts[0].to_bytes())}")
 
@@ -40,6 +42,7 @@ def wake_printer(client, tries=4):
 def probe_printer(args):
     """Heartbeat the printer; returns None if healthy, else the error text."""
     from ._vendor.niimprint import PrinterClient
+
     transport = None
     try:
         transport = open_transport(args)
@@ -59,8 +62,10 @@ def print_label(node, args, profile):
         layout = pick_layout(profile, 1 if args.die_cut else profile.default_label_type)
         img = layout.render(node, profile)
         img.save(args.out)
-        print(f"dry run: wrote {args.out} ({img.width}x{img.height}, {layout.desc}, "
-              f"{profile.name} density {density})")
+        print(
+            f"dry run: wrote {args.out} ({img.width}x{img.height}, {layout.desc}, "
+            f"{profile.name} density {density})"
+        )
         dump_packets(to_printer_orientation(img, layout, profile, args.flip))
         return True
 
@@ -69,8 +74,7 @@ def print_label(node, args, profile):
 
     # Models whose heartbeat lid bit is inverted (niimbluelib's list, plus
     # 2320 observed on a Yichip-USB D110 fw 10.51: reports 1 while printing).
-    INVERTED_LID = {272, 273, 274, 512, 513, 514, 1792, 2304, 2320,
-                    2560, 3584, 3840, 4352, 5120}
+    INVERTED_LID = {272, 273, 274, 512, 513, 514, 1792, 2304, 2320, 2560, 3584, 3840, 4352, 5120}
 
     class BadgePrinter(PrinterClient):
         # print_image() hardcodes set_label_type(1); use what the roll says.
@@ -91,11 +95,12 @@ def print_label(node, args, profile):
                 print("  WARNING: printer says its lid is OPEN — press it shut until it clicks")
             client.label_type = roll_label_type(client, args, profile)
             layout = pick_layout(profile, client.label_type)
-            img = to_printer_orientation(layout.render(node, profile), layout,
-                                         profile, args.flip)
+            img = to_printer_orientation(layout.render(node, profile), layout, profile, args.flip)
             pv = client.get_protocol_version()
-            print(f"  roll type {client.label_type} -> {layout.desc} "
-                  f"({img.height}px long, devicetype {devicetype}, protocol v{pv})")
+            print(
+                f"  roll type {client.label_type} -> {layout.desc} "
+                f"({img.height}px long, devicetype {devicetype}, protocol v{pv})"
+            )
             if pv >= 3 or profile.min_protocol >= 3:
                 # Matches what official clients send v3+ printers. The legacy
                 # sequence also works on D110_M (verified) — this path is kept
@@ -103,8 +108,9 @@ def print_label(node, args, profile):
                 # min_protocol forces it for families that need it: the legacy
                 # path sends uncompressed zero-count rows, which this hardware
                 # ACKs and then prints blank.
-                client.print_image_new(img, density=density,
-                                       label_type=client.label_type, v4=pv >= 4)
+                client.print_image_new(
+                    img, density=density, label_type=client.label_type, v4=pv >= 4
+                )
             else:
                 client.print_image(img, density=density)
             print("  printed!")

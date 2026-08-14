@@ -24,20 +24,22 @@ check on the wire format there is, so read those numbers rather than just lookin
 
 ```bash
 ruff check .                  # lint
+ruff format --check .         # formatting
 mypy                          # types
 python scripts/check_spdx.py  # SPDX headers on every first-party source file
-pytest                         # the whole suite — no printer, no radio
+pytest                        # the whole suite — no printer, no radio
 ```
 
-CI runs the same four, plus a render job that renders every layout and uploads the PNGs as
+CI runs the same five, plus a render job that renders every layout and uploads the PNGs as
 artifacts.
 
 ## Conventions
 
-- **Formatting:** `ruff check` only — deliberately **not** `ruff format`. The layout and
-  logo code is column-aligned geometry with the numbers lined up to be read as a table;
-  the formatter collapses that alignment and the code gets harder to check against the
-  printer's dot maths. Match the surrounding style by hand.
+- **Formatting:** `ruff format`, same as the org's other Python repos. One wrinkle worth
+  knowing: a trailing comment that runs onto a second line gets its continuation dedented
+  to column 0, where it reads as belonging to whatever comes next. Put multi-line comments
+  in a block *above* the statement instead — that survives the formatter and reads
+  correctly either way.
 - **Vendored code:** everything under `src/labeltastic/_vendor/` keeps its upstream license
   and is excluded from lint, types, and the SPDX gate. Don't restyle it; keep local changes
   minimal and documented in [`_vendor/README.md`](src/labeltastic/_vendor/README.md).

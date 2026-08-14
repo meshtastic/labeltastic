@@ -37,25 +37,45 @@ from .profiles import PROFILES
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--serial", default=None, help="radio serial port (default: auto-detect)")
-    p.add_argument("--tcp", default=None, help="meshtasticd host instead of serial (e.g. localhost)")
+    p.add_argument(
+        "--tcp", default=None, help="meshtasticd host instead of serial (e.g. localhost)"
+    )
     p.add_argument("--conn", choices=["usb", "bluetooth"], default="usb", help="printer connection")
-    p.add_argument("--printer", choices=sorted(PROFILES), default="d110",
-                   help="printer model and label stock: "
-                        + "; ".join(f"{k} = {v.desc}" for k, v in sorted(PROFILES.items())))
-    p.add_argument("--printer-port", dest="printer_addr", default=None,
-                   help="printer serial port (SET THIS — auto-detect may grab the radio!) or BT MAC")
-    p.add_argument("--die-cut", action="store_true",
-                   help="gap-sensed die-cut labels instead of a continuous roll")
-    p.add_argument("--flip", action="store_true",
-                   help="rotate 180 if labels come out upside down")
-    p.add_argument("--rotate", type=int, choices=[90, 270], default=None,
-                   help=argparse.SUPPRESS)  # deprecated spelling of --flip
-    p.add_argument("--density", type=int, choices=range(1, 6), default=3,
-                   metavar="1-5", help="print density, clamped to the model's max")
+    p.add_argument(
+        "--printer",
+        choices=sorted(PROFILES),
+        default="d110",
+        help="printer model and label stock: "
+        + "; ".join(f"{k} = {v.desc}" for k, v in sorted(PROFILES.items())),
+    )
+    p.add_argument(
+        "--printer-port",
+        dest="printer_addr",
+        default=None,
+        help="printer serial port (SET THIS — auto-detect may grab the radio!) or BT MAC",
+    )
+    p.add_argument(
+        "--die-cut",
+        action="store_true",
+        help="gap-sensed die-cut labels instead of a continuous roll",
+    )
+    p.add_argument("--flip", action="store_true", help="rotate 180 if labels come out upside down")
+    p.add_argument(
+        "--rotate", type=int, choices=[90, 270], default=None, help=argparse.SUPPRESS
+    )  # deprecated spelling of --flip
+    p.add_argument(
+        "--density",
+        type=int,
+        choices=range(1, 6),
+        default=3,
+        metavar="1-5",
+        help="print density, clamped to the model's max",
+    )
     p.add_argument("--cooldown", type=int, default=600, help="per-node cooldown, seconds")
     p.add_argument("--test", action="store_true", help="print a badge for this node and exit")
-    p.add_argument("--sample", action="store_true",
-                   help="print/render a canned node — needs no radio")
+    p.add_argument(
+        "--sample", action="store_true", help="print/render a canned node — needs no radio"
+    )
     p.add_argument("--dry-run", action="store_true", help="write PNG instead of printing")
     p.add_argument("--out", default="/tmp/badge-test.png", help="--dry-run PNG path")
     p.add_argument("--debug", action="store_true", help="hex-dump printer packets")
@@ -65,11 +85,14 @@ def main():
         args.flip = True
     profile = PROFILES[args.printer]
     if args.density > profile.max_density:
-        print(f"note: {profile.name} maxes out at density {profile.max_density}, "
-              f"clamping {args.density}")
+        print(
+            f"note: {profile.name} maxes out at density {profile.max_density}, "
+            f"clamping {args.density}"
+        )
 
     if args.debug:
         import logging
+
         logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
         logging.getLogger("niimprint").setLevel(logging.DEBUG)
 
@@ -86,9 +109,11 @@ def main():
 
     if args.tcp:
         from meshtastic.tcp_interface import TCPInterface
+
         interface = TCPInterface(hostname=args.tcp)
     else:
         from meshtastic.serial_interface import SerialInterface
+
         interface = SerialInterface(devPath=args.serial)
 
     my_num = interface.myInfo.my_node_num

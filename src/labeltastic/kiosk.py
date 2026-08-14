@@ -74,7 +74,9 @@ class Kiosk:
             alive = not err
             quiet = time.monotonic() - self.last_rx
             if quiet > 900:
-                print(f"no mesh packets for {int(quiet)}s — assuming wedged radio link, exiting for restart")
+                print(
+                    f"no mesh packets for {int(quiet)}s — assuming wedged radio link, exiting for restart"
+                )
                 os._exit(71)
             if quiet > 300:
                 print(f"WARNING: no mesh packets for {int(quiet)}s")
@@ -105,7 +107,10 @@ class Kiosk:
             return
         wait = self.args.cooldown - (time.monotonic() - self.last_print.get(sender, -1e9))
         if wait > 0:
-            self.reply(sender, f"Easy there — one badge per {self.args.cooldown // 60} min. {int(wait)}s left.")
+            self.reply(
+                sender,
+                f"Easy there — one badge per {self.args.cooldown // 60} min. {int(wait)}s left.",
+            )
             return
         node = self.interface.nodesByNum.get(sender)
         if not node or not node.get("user", {}).get("id"):
@@ -113,7 +118,10 @@ class Kiosk:
             # for their nodeinfo; on_user prints the badge when it arrives.
             self.pending[sender] = time.monotonic()
             self.request_nodeinfo(sender)
-            self.reply(sender, "Don't know you yet — asking your node for its info. Badge prints when it answers.")
+            self.reply(
+                sender,
+                "Don't know you yet — asking your node for its info. Badge prints when it answers.",
+            )
             return
         self.last_print[sender] = time.monotonic()
         self.jobs.put((sender, node))
@@ -127,9 +135,9 @@ class Kiosk:
             u.id = me.get("id", "")
             u.long_name = me.get("longName", "")
             u.short_name = me.get("shortName", "")
-            self.interface.sendData(u, destinationId=dest,
-                                    portNum=portnums_pb2.PortNum.NODEINFO_APP,
-                                    wantResponse=True)
+            self.interface.sendData(
+                u, destinationId=dest, portNum=portnums_pb2.PortNum.NODEINFO_APP, wantResponse=True
+            )
         except Exception as e:
             print(f"nodeinfo request to {dest:#x} failed: {e}")
 

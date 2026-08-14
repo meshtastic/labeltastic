@@ -77,8 +77,7 @@ def runs(text):
 
 def mixed_len(draw, text, size):
     return sum(
-        draw.textlength(r, font=(emoji_font(size) if e else text_font(size)))
-        for e, r in runs(text)
+        draw.textlength(r, font=(emoji_font(size) if e else text_font(size))) for e, r in runs(text)
     )
 
 
