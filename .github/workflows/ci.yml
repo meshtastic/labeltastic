@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # hatch-vcs needs tags
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Ruff lint
+        # via the dev extra so CI lints with the same pinned ruff as local dev
+        run: uv run --extra dev ruff check --output-format=github .
+      - name: SPDX headers
+        run: python scripts/check_spdx.py
+
+  types:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: mypy
+        run: uv run --extra dev mypy
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install a text font
+        # The render tests skip themselves without one, which would quietly
+        # gut this job down to the font-free half of the suite.
+        run: sudo apt-get update && sudo apt-get install -y fonts-dejavu-core
+      - name: Unit tier (no printer, no radio)
+        run: uv run --python ${{ matrix.python-version }} --extra dev pytest -q
+
+  render:
+    # Proves the thing still produces a label end to end, on every layout, and
+    # keeps the artifacts so a human can eyeball what the printer would burn.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: sudo apt-get update && sudo apt-get install -y fonts-dejavu-core
+      - name: Render every layout
+        run: |
+          set -euo pipefail
+          for args in "--printer d110" "--printer d110 --die-cut" "--printer b1 --die-cut"; do
+            name=$(echo "$args" | tr -d ' -')
+            uv run labeltastic --sample --dry-run $args --out "badge-$name.png"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rendered-badges
+          path: badge-*.png
