@@ -40,9 +40,9 @@ names, node ID and QR at full detail](docs/badge-closeup.jpg)
 On the Pi:
 
 ```bash
-sudo apt install -y python3-venv fonts-dejavu-core git
+sudo apt install -y python3-venv fonts-dejavu-core
 python3 -m venv ~/badge
-~/badge/bin/pip install git+https://github.com/meshtastic/labeltastic
+~/badge/bin/pip install labeltastic
 ```
 
 That puts a `labeltastic` command in `~/badge/bin/`. The emoji font ships
