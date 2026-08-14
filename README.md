@@ -9,6 +9,12 @@ PKC public key included, and the Meshtastic M-PWRD mark.
 
 Built at DEFCON 34. 🦞
 
+![Two printed nametags resting on a Niimbot label printer: the landscape card
+layout on 50x30 mm stock above, showing the M-PWRD mark, a caterpillar emoji,
+the short name WPG, the long name Wandering Packet Goblin, the node ID
+!deadbeef and a contact QR; the compact layout below, with its QR on the left
+and the mark bottom-right](docs/printed-badges.jpg)
+
 ## Hardware
 
 - Raspberry Pi with a Meshtastic node attached (USB serial radio, or
@@ -25,6 +31,9 @@ Built at DEFCON 34. 🦞
   the B1 card is laid out across the head instead of along it. Its QR gets
   3 printer dots per module against the D110's 2, which means full long
   names survive into the QR payload instead of being truncated.
+
+![Close-up of the card layout as printed, showing the header band, emoji,
+names, node ID and QR at full detail](docs/badge-closeup.jpg)
 
 ## Setup
 
