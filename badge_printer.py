@@ -3,10 +3,10 @@
 
 DM the kiosk node the word "print" (or "badge"/"tag") and it prints a
 nametag for the sender: a black HELLO-MY-NODE-IS header, their short/long
-name (emoji included, via monochrome Noto Emoji), node ID, and a Meshtastic
-shared-contact QR (https://meshtastic.org/v/#...) that anyone can scan in
-the Meshtastic app (>= 2.6) to add them as a contact — public key included,
-so the contact imports as PKC-verifiable.
+name (emoji included, via monochrome Noto Emoji), node ID, the Meshtastic
+M-PWRD mark, and a Meshtastic shared-contact QR (https://meshtastic.org/v/#...)
+that anyone can scan in the Meshtastic app (>= 2.6) to add them as a contact —
+public key included, so the contact imports as PKC-verifiable.
 
 Two printers, picked with --printer (see PROFILES):
   d110  12 mm head. Dynamic-length banner on a continuous roll, or --die-cut
@@ -183,6 +183,76 @@ def qr_image(node, side, min_module_px=2):
     return canvas
 
 
+# The Meshtastic "M-PWRD" mark, traced from M-PWRD_BW_Border.svg in
+# meshtastic/design: rounded frame, mountain M on top, PWRD in a band below.
+# Coordinates are that file's own user units with the frame's top-left moved to
+# the origin, so one scale factor drives every part.
+LOGO_W, LOGO_H = 2.28891, 2.20630    # frame bounding box
+LOGO_INSET = 0.1                     # frame stroke, same on all four sides
+LOGO_R_OUT, LOGO_R_IN = 0.25, 0.15   # outer and inner corner radii
+LOGO_BAND = (1.25733, 1.35733)       # bar dividing the M from the wordmark
+LOGO_SLASH = ((0.38985, 1.11826), (0.27480, 1.03796),
+              (0.85635, 0.20476), (0.97139, 0.28505))
+LOGO_CHEVRON = ((1.49623, 0.25395), (2.04204, 1.03727), (1.91897, 1.12302),
+                (1.42250, 0.41052), (0.92756, 1.12419), (0.80430, 1.03871),
+                (1.34843, 0.25412))  # the SVG rounds this apex; 2 dots, skipped
+LOGO_WORD = (0.23894, 1.51383, 1.80207, 0.44351)  # PWRD ink box: x, y, w, h
+LOGO_MARK = (0.27480, 0.20476, 1.76724, 0.91943)  # the Ms alone, likewise
+
+
+def wordmark(size):
+    """PWRD cropped to its ink, so it can be scaled into the band exactly
+    rather than through some font's idea of cap height."""
+    img = Image.new("L", (size * 5, size * 2), 255)
+    ImageDraw.Draw(img).text((size // 4, size // 4), "PWRD",
+                             font=text_font(size), fill=0)
+    return img.crop(img.point(lambda p: 255 - p).getbbox())
+
+
+@lru_cache(maxsize=None)
+def mpwrd_logo(height, invert=False, frame=True):
+    """The M-PWRD mark, `height` dots tall, as hard black and white.
+
+    Drawn 4x and thresholded instead of left anti-aliased: niimprint's
+    convert("1") Floyd-Steinbergs whatever grey it is handed, which scatters a
+    mark this small into noise. Jagged diagonals print better than dithered
+    ones. invert=True for dropping it into one of the black header bands.
+
+    frame=False gives the bare Ms — no border, no wordmark. PWRD is only a
+    fifth of the frame's height, so anywhere the whole logo has to fit a gap
+    rather than claim its own space it lands under a millimetre and prints as a
+    smudge. Only the banner, which can just grow, gets the framed version."""
+    mx, my, mw, mh = LOGO_MARK
+    box_w, box_h = (LOGO_W, LOGO_H) if frame else (mw, mh)
+    s = height * 4 / box_h
+    img = Image.new("L", (round(box_w * s), height * 4), 255)
+    d = ImageDraw.Draw(img)
+
+    if frame:
+        def box(x0, y0, x1, y1, r, fill):
+            d.rounded_rectangle([x0 * s, y0 * s, x1 * s - 1, y1 * s - 1],
+                                radius=r * s, fill=fill)
+
+        box(0, 0, LOGO_W, LOGO_H, LOGO_R_OUT, 0)
+        box(LOGO_INSET, LOGO_INSET, LOGO_W - LOGO_INSET, LOGO_H - LOGO_INSET,
+            LOGO_R_IN, 255)
+        d.rectangle([LOGO_INSET * s, LOGO_BAND[0] * s,
+                     (LOGO_W - LOGO_INSET) * s - 1, LOGO_BAND[1] * s - 1], fill=0)
+
+        wx, wy, ww, wh = LOGO_WORD
+        word = wordmark(160).resize((max(1, round(ww * s)), max(1, round(wh * s))),
+                                    Image.LANCZOS)
+        img.paste(word, (round(wx * s), round(wy * s)))
+
+    ox, oy = (0, 0) if frame else (-mx * s, -my * s)
+    for poly in (LOGO_SLASH, LOGO_CHEVRON):
+        d.polygon([(x * s + ox, y * s + oy) for x, y in poly], fill=0)
+
+    img = img.resize((max(1, round(box_w / box_h * height)), height), Image.LANCZOS)
+    ink, paper = (255, 0) if invert else (0, 255)
+    return img.point(lambda p: ink if p < 128 else paper)
+
+
 # --sample: the public key is 2/3 of the QR payload, so a node without one
 # renders a comfortably small QR and proves nothing about the real thing. The
 # emoji and the long name exercise clean()/draw_mixed() and fit()'s ellipsizing.
@@ -208,6 +278,10 @@ def name_lines(node):
     return short, long_, nid
 
 
+BANNER_LOGO_PX = 64   # a column of its own on the endless roll
+COMPACT_LOGO_PX = 24  # bare Ms, so this is height of mark not of frame
+
+
 def render_banner(node, profile):
     """Dynamic-length badge for continuous rolls: HELLO header, name, QR.
 
@@ -225,7 +299,11 @@ def render_banner(node, profile):
     hdr_w = int(max(probe.textlength("HELLO", font=text_font(26)),
                     probe.textlength("MY NODE IS", font=text_font(12)))) + 20
 
-    total = hdr_w + 12 + name_w + 12 + across + 4
+    # The roll is continuous, so the mark buys its own column rather than
+    # squeezing the name — it can't go in the header band, which is 96 dots
+    # tall with HELLO/MY NODE IS already filling all but the bottom 26.
+    logo = mpwrd_logo(BANNER_LOGO_PX)
+    total = hdr_w + 12 + name_w + 12 + logo.width + 10 + across + 4
     label = Image.new("L", (total, across), 255)
     d = ImageDraw.Draw(label)
 
@@ -239,6 +317,7 @@ def render_banner(node, profile):
     draw_mixed(d, (x, 66), long_, s2, 0)
     draw_mixed(d, (x, 87), nid, s3, 0)
 
+    label.paste(logo, (x + name_w + 12, (across - logo.height) // 2))
     label.paste(qr_image(node, across), (total - across - 4, 0))
     return label
 
@@ -251,11 +330,17 @@ def render_compact(node, profile):
     label = Image.new("L", (length, across), 255)
     label.paste(qr_image(node, across), (0, 0))
     d = ImageDraw.Draw(label)
+    logo = mpwrd_logo(COMPACT_LOGO_PX, frame=False)
+    label.paste(logo, (length - 2 - logo.width, across - 4 - logo.height))
     x = across + 6
     width = length - x - 2
     short, long_, nid = name_lines(node)
-    for text, start, y in ((short, 34, 22), (long_, 16, 56), (nid, 12, 81)):
-        text, size = fit(d, text, width, start)
+    # Only the node ID gives up width to the mark. Node IDs are 9 characters, so
+    # the column it leaves is still roomy, while the names keep the full width —
+    # they are what anyone actually reads off the badge.
+    for text, start, y, w in ((short, 34, 22, width), (long_, 16, 56, width),
+                              (nid, 12, 81, width - logo.width - 6)):
+        text, size = fit(d, text, w, start)
         draw_mixed(d, (x, y), text, size, 0)
     return label
 
@@ -265,6 +350,9 @@ CARD_BAND_PX = 56    # 7 mm header band. Bigger burns a lot of dots at once:
 CARD_MARGIN_PX = 16  # 2 mm — the 48 mm head may sit off-centre on 50 mm stock,
                      # so keep ink away from both edges and let it clip white.
 CARD_QR_PX = 168
+CARD_LOGO_PX = 42    # bare Ms again, filling the band: the wordmark is only
+                     # 1/5 of the frame's height, so even here it came out
+                     # under a millimetre. Rides in the band, costing no space.
 
 
 def render_card(node, profile):
@@ -280,6 +368,8 @@ def render_card(node, profile):
     cx = w // 2
     d.text((cx, 19), "HELLO", font=text_font(26), anchor="mm", fill=255)
     d.text((cx, 43), "MY NODE IS", font=text_font(15), anchor="mm", fill=255)
+    label.paste(mpwrd_logo(CARD_LOGO_PX, invert=True, frame=False),
+                (CARD_MARGIN_PX, (CARD_BAND_PX - CARD_LOGO_PX) // 2))
 
     qr_x = w - CARD_MARGIN_PX - CARD_QR_PX
     label.paste(qr_image(node, CARD_QR_PX, min_module_px=3), (qr_x, CARD_BAND_PX + 6))
