@@ -10,7 +10,7 @@ import serial
 from PIL import Image, ImageOps
 from serial.tools.list_ports import comports as list_comports
 
-from niimprint.packet import NiimbotPacket
+from .packet import NiimbotPacket
 
 
 class InfoEnum(enum.IntEnum):

@@ -2,4 +2,16 @@ __pycache__/
 *.pyc
 venv/
 .venv/
-*.png
+
+# hatch-vcs writes this at build time
+src/labeltastic/_version.py
+
+# build artifacts
+build/
+dist/
+*.egg-info/
+
+# rendered dry-run badges (CI uploads these as artifacts; don't commit them).
+# Deliberately not a blanket *.png — that would silently swallow any image
+# added to the docs.
+badge-*.png
