@@ -1,0 +1,8 @@
+cff-version: 1.2.0
+title: labeltastic
+message: "Meshtastic contact-QR nametag kiosk for Niimbot label printers."
+type: software
+authors:
+  - name: Meshtastic contributors
+repository-code: "https://github.com/meshtastic/labeltastic"
+license: GPL-3.0-only

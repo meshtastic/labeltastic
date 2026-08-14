@@ -1,0 +1,28 @@
+# labeltastic
+
+> Meshtastic contact-QR nametag kiosk for a Raspberry Pi plus a Niimbot label printer. DM
+> the kiosk node the word `print` over the mesh and it prints your nametag: a HELLO-MY-NODE-IS
+> header, your short and long name (emoji included), node ID, the Meshtastic M-PWRD mark, and
+> a shared-contact QR (`https://meshtastic.org/v/#...`) that anyone can scan in the Meshtastic
+> app (>= 2.6) to add you as a contact, PKC public key included. Built at DEFCON 34.
+>
+> Two printers: the D110 (12 mm head — dynamic-length banner on a continuous roll, or a
+> compact card on 30x15 mm die-cut) and the B1 (48 mm head — landscape card on 50x30 mm).
+> `labeltastic --sample --dry-run` renders and encodes a canned node with no hardware
+> attached at all.
+
+## Docs
+- [README](README.md): hardware, install, running the kiosk, notes on the layouts
+- [AGENTS.md](AGENTS.md): module map, the invariants that matter, how to work without hardware
+- [CONTRIBUTING](CONTRIBUTING.md): setup and the four gates
+- [SECURITY](SECURITY.md): threat model — the trigger is unauthenticated by design
+
+## Code
+- [src/labeltastic/render.py](src/labeltastic/render.py): the three badge layouts
+- [src/labeltastic/profiles.py](src/labeltastic/profiles.py): printer/stock table, layout
+  selection, and rotation onto the head
+- [src/labeltastic/contact.py](src/labeltastic/contact.py): SharedContact URL and the QR
+- [src/labeltastic/logo.py](src/labeltastic/logo.py): the M-PWRD mark, drawn with PIL primitives
+- [src/labeltastic/ports.py](src/labeltastic/ports.py): telling the radio and printer apart by USB id
+- [src/labeltastic/kiosk.py](src/labeltastic/kiosk.py): the mesh listener, job queue and watchdogs
+- [src/labeltastic/_vendor/](src/labeltastic/_vendor/README.md): vendored niimprint (MIT)

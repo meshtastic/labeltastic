@@ -28,29 +28,31 @@ Built at DEFCON 34. 🦞
 
 ## Setup
 
+On the Pi:
+
 ```bash
-sudo apt install -y python3-venv fonts-dejavu-core
+sudo apt install -y python3-venv fonts-dejavu-core git
 python3 -m venv ~/badge
-~/badge/bin/pip install meshtastic qrcode pillow pypubsub pyserial
+~/badge/bin/pip install git+https://github.com/meshtastic/labeltastic
 ```
 
-[niimprint](https://github.com/AndBondStyle/niimprint) is vendored in
-`niimprint/` (MIT) — upstream's packaging pins Python to 3.11.x, which
-modern Pi OS is way past, and the code itself runs fine on 3.14.
+That puts a `labeltastic` command in `~/badge/bin/`. The emoji font ships
+with the package; `fonts-dejavu-core` is the text font and comes from the
+system. Python 3.11 or newer.
 
-The script sorts out which USB serial port is the radio and which is the
+`labeltastic` sorts out which USB serial port is the radio and which is the
 printer by USB vendor/product IDs (the D110 is a CH340; radios are
 CP210x/CH9102/ESP32/nRF52/RP2040) and prints its port table at startup.
 Just run it:
 
 ```bash
-~/badge/bin/python badge_printer.py --test --dry-run --sample   # render only, no radio needed
-~/badge/bin/python badge_printer.py --test                      # one real test print
-~/badge/bin/python badge_printer.py                             # run the kiosk
-~/badge/bin/python badge_printer.py --printer b1 --die-cut      # kiosk on a B1
+~/badge/bin/labeltastic --sample --dry-run          # render only, no radio needed
+~/badge/bin/labeltastic --test                      # one real test print
+~/badge/bin/labeltastic                             # run the kiosk
+~/badge/bin/labeltastic --printer b1 --die-cut      # kiosk on a B1
 ```
 
-`--sample` renders a canned node, so `--test --dry-run --sample` works with
+`--sample` renders a canned node, so `--sample --dry-run` works with
 nothing plugged in at all. It writes the PNG (`--out` to redirect) and then
 runs the real bitmap encoder over it, reporting packet count and per-third
 pixel counts — the only check on the wire format you can make without the
@@ -63,6 +65,18 @@ USB IDs aren't known here, so pass `--printer-port` explicitly for one.
 
 If labels come out flipped, add `--flip` (the old `--rotate 270` still works).
 
+## Development
+
+```bash
+uv sync --extra dev
+ruff check . && mypy && python scripts/check_spdx.py && pytest
+```
+
+None of it needs a printer or a radio. [CONTRIBUTING.md](CONTRIBUTING.md) has
+the details, [AGENTS.md](AGENTS.md) the module map and the invariants that
+will bite you (starting with: `head_px` must be a multiple of 24, or the
+printer prints blank and reports success).
+
 ## Notes
 
 - DM-triggered only, with a per-node cooldown — broadcast triggers would
@@ -71,9 +85,16 @@ If labels come out flipped, add `--flip` (the old `--rotate 270` still works).
   to keep QR modules >= 2 printer dots (3 on the B1's roomier card), or
   phones can't scan the thermal print.
 - Print density is capped per model (`--density`): 3 on the D110, 5 on the B1.
-- `NotoEmoji-Regular.ttf` is Google's monochrome Noto Emoji, vendored from
+- `src/labeltastic/assets/NotoEmoji-Regular.ttf` is Google's monochrome Noto
+  Emoji, vendored from
   [google/fonts](https://github.com/google/fonts/tree/main/ofl/notoemoji)
-  under the SIL Open Font License 1.1.
+  under the SIL Open Font License 1.1 (`assets/OFL.txt`).
+- [niimprint](https://github.com/AndBondStyle/niimprint) is vendored under
+  `src/labeltastic/_vendor/` (MIT, © kjy00302 — AndBondStyle's repo is the
+  maintained fork of that original) because upstream's packaging pins Python
+  to 3.11.x, which modern Pi OS is way past, while the code itself runs fine
+  on 3.14. See its [README](src/labeltastic/_vendor/README.md) for the two
+  local changes.
 - The M-PWRD mark is redrawn with PIL primitives from `M-PWRD_BW_Border.svg`
   in [meshtastic/design](https://github.com/meshtastic/design) — the geometry
   is a dozen coordinates, which beats putting an SVG rasteriser (and native
