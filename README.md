@@ -4,6 +4,7 @@
 [![PyPI](https://img.shields.io/pypi/v/labeltastic.svg)](https://pypi.org/project/labeltastic/)
 [![Python](https://img.shields.io/pypi/pyversions/labeltastic.svg)](https://pypi.org/project/labeltastic/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![CLA assistant](https://cla-assistant.io/readme/badge/meshtastic/labeltastic)](https://cla-assistant.io/meshtastic/labeltastic)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 Meshtastic contact-QR nametag kiosk for a Raspberry Pi + a Niimbot label printer.

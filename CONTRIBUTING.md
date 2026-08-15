@@ -3,6 +3,11 @@
 Thanks for helping improve labeltastic. See [AGENTS.md](AGENTS.md) for how the code is
 laid out and why the layout code is shaped the way it is.
 
+> [!IMPORTANT]
+> Before making any contributions, you must sign our Contributor License Agreement (CLA).
+> You can do this by visiting <https://cla-assistant.io/meshtastic/labeltastic>. Be sure to
+> use the GitHub account you will use to submit your contributions when signing.
+
 ## Setup
 
 ```bash
