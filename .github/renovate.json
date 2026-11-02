@@ -4,5 +4,24 @@
   "extends": ["config:recommended", ":semanticCommits", ":dependencyDashboard"],
   "labels": ["dependencies"],
   "pep621": { "enabled": true },
-  "github-actions": { "pinDigests": true }
+  "github-actions": { "pinDigests": true },
+  "packageRules": [
+    {
+      "description": "Automerge non-major updates for stable versions",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "matchCurrentVersion": "!/^0/",
+      "automerge": true
+    },
+    {
+      "description": "Automerge patch updates for unstable (0.x) versions",
+      "matchUpdateTypes": ["patch", "pin", "digest"],
+      "matchCurrentVersion": "/^0/",
+      "automerge": true
+    },
+    {
+      "description": "Automerge pins and digests regardless of version",
+      "matchUpdateTypes": ["pin", "digest"],
+      "automerge": true
+    }
+  ]
 }
