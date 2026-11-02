@@ -25,4 +25,7 @@
 - [src/labeltastic/logo.py](src/labeltastic/logo.py): the M-PWRD mark, drawn with PIL primitives
 - [src/labeltastic/ports.py](src/labeltastic/ports.py): telling the radio and printer apart by USB id
 - [src/labeltastic/kiosk.py](src/labeltastic/kiosk.py): the mesh listener, job queue and watchdogs
+- [scripts/provision_ble_pin.py](scripts/provision_ble_pin.py): standalone provisioning script that
+  sets a random fixed BLE PIN per node and writes its connect link
+  (`https://meshtastic.org/connections?address=x<MAC>&pin=<PIN>`, or `meshtastic://meshtastic/...`) and QR
 - [src/labeltastic/_vendor/](src/labeltastic/_vendor/README.md): vendored niimprint (MIT)
