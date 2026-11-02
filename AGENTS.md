@@ -29,6 +29,7 @@ contact.py                                                  contact_url ──�
 | `contact.py` | SharedContact URL, the QR, and the three name lines |
 | `fonts.py` | font lookup, and drawing text that mixes glyphs with emoji |
 | `ports.py` | which serial port is the radio, which is the printer |
+| `provision.py` | `labeltastic-provision`: BLE address, fixed PIN, connect link + QR per node |
 | `_vendor/niimprint` | the printer driver (MIT, upstream) — see its README |
 
 ## Invariants worth knowing before you change anything
