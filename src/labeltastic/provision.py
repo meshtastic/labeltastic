@@ -163,14 +163,7 @@ def provision(port: str, args, done: set[str]) -> str | None:
             return address
 
         pin = random_pin()
-        node = iface.localNode
-        bt = node.localConfig.bluetooth
-        bt.enabled = True
-        bt.mode = config_pb2.Config.BluetoothConfig.PairingMode.FIXED_PIN
-        bt.fixed_pin = int(pin)
-        node.writeConfig("bluetooth")  # the node reboots to apply it
-        print(f"[{port}] {address}: Bluetooth set to FIXED_PIN {pin}")
-
+        # Record the PIN before the node takes it: a failed write after would lock it out.
         uri = connect_uri(LINK_BASES[args.link], address, pin)
         png = args.out / f"{address.replace(':', '')}.png"
         write_qr(uri, png)
@@ -188,6 +181,14 @@ def provision(port: str, args, done: set[str]) -> str | None:
                 "qr_png": str(png),
             },
         )
+
+        node = iface.localNode
+        bt = node.localConfig.bluetooth
+        bt.enabled = True
+        bt.mode = config_pb2.Config.BluetoothConfig.PairingMode.FIXED_PIN
+        bt.fixed_pin = int(pin)
+        node.writeConfig("bluetooth")  # the node reboots to apply it
+        print(f"[{port}] {address}: Bluetooth set to FIXED_PIN {pin}")
         done.add(address)
         return address
     finally:
