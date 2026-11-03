@@ -44,7 +44,21 @@ LINK_BASES = {
 }
 BLE_ADDRESS_FIELD = 17  # DeviceMetadata.ble_address
 ADDRESS_RE = re.compile(r"^[0-9A-F]{2}(:[0-9A-F]{2}){5}$")
-CSV_FIELDS = ["time", "port", "node_id", "hw_model", "ble_address", "pin", "uri", "qr_png"]
+CSV_FIELDS = [
+    "time",
+    "port",
+    "node_id",
+    "hw_model",
+    "ble_address",
+    "pin",
+    "uri",
+    "qr_png",
+    "status",
+]
+# The firmware reboots DEFAULT_REBOOT_SECONDS (7) after a config write, then boots.
+REBOOT_WAIT_S = 10
+# Attempts per plugged-in port before the watcher gives up on it until it is replugged.
+PORT_ATTEMPTS = 3
 
 
 def _read_varint(buf: bytes, pos: int) -> tuple[int, int]:
@@ -131,6 +145,60 @@ def append_csv(path: Path, row: dict) -> None:
         w.writerow(row)
 
 
+def set_csv_status(path: Path, address: str, pin: str, status: str) -> None:
+    """Set the status of the row for this address and PIN."""
+    with path.open(newline="") as f:
+        rows = list(csv.DictReader(f))
+    for row in rows:
+        if row["ble_address"] == address and row["pin"] == pin:
+            row["status"] = status
+    with path.open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=CSV_FIELDS)
+        w.writeheader()
+        w.writerows(rows)
+
+
+def pin_applied(bt, pin: str) -> bool:
+    """Whether a node's stored BluetoothConfig is the one we wrote."""
+    from meshtastic.protobuf import config_pb2
+
+    fixed = config_pb2.Config.BluetoothConfig.PairingMode.FIXED_PIN
+    return bt.enabled and bt.mode == fixed and bt.fixed_pin == int(pin)
+
+
+def verify_pin(port: str, address: str, pin: str, args) -> str:
+    """Reconnect after the reboot and read back the stored PIN: verified, mismatch or unverified.
+
+    The local-node config write is fire-and-forget, so this readback is the only proof
+    the node took it (a managed node, for one, refuses it silently)."""
+    from meshtastic.serial_interface import SerialInterface
+
+    time.sleep(REBOOT_WAIT_S)
+    deadline = time.monotonic() + args.timeout
+    while time.monotonic() < deadline:
+        try:
+            iface = SerialInterface(devPath=port, timeout=args.timeout)
+        except Exception:  # still rebooting, or the port is re-enumerating
+            time.sleep(2)
+            continue
+        try:
+            seen = ble_address_from_metadata(iface.metadata)
+            if seen and seen != address:
+                print(f"[{port}] a different node ({seen}) came back on this port")
+                return "unverified"
+            return (
+                "verified"
+                if pin_applied(iface.localNode.localConfig.bluetooth, pin)
+                else "mismatch"
+            )
+        finally:
+            try:
+                iface.close()
+            except Exception:
+                pass
+    return "unverified"
+
+
 def _hw_model_name(md) -> str:
     from meshtastic.protobuf import mesh_pb2
 
@@ -141,7 +209,7 @@ def _hw_model_name(md) -> str:
 
 
 def provision(port: str, args, done: set[str]) -> str | None:
-    """Provision the node on `port`. Returns its BLE address, or None if it was skipped."""
+    """Provision the node on `port`. Returns its CSV status, or None if it was skipped."""
     from meshtastic.protobuf import config_pb2
     from meshtastic.serial_interface import SerialInterface
 
@@ -152,6 +220,12 @@ def provision(port: str, args, done: set[str]) -> str | None:
         user = iface.getMyUser() or {}
         address = ble_address_from_metadata(md)
         if not address and args.macaddr_fallback:
+            # Only nRF52 advertises its node MAC; hasWifi marks the ESP32s, which advertise ESP_MAC_BT.
+            if md is not None and md.hasWifi:
+                print(
+                    f"[{port}] --macaddr-fallback is nRF52 only, and this node has WiFi; skipping"
+                )
+                return None
             address = ble_address_from_macaddr(user)
             if address:
                 print(f"[{port}] no ble_address from firmware; using MAC {address} (nRF52 only)")
@@ -160,7 +234,10 @@ def provision(port: str, args, done: set[str]) -> str | None:
             return None
         if address in done:
             print(f"[{port}] {address} already done this run (it rebooted after the PIN change)")
-            return address
+            return None
+        if md is not None and md.hasWifi and iface.localNode.localConfig.network.wifi_enabled:
+            print(f"[{port}] {address}: WiFi is on, which keeps Bluetooth off; turn it off first")
+            return None
 
         pin = random_pin()
         # Record the PIN before the node takes it: a failed write after would lock it out.
@@ -179,6 +256,7 @@ def provision(port: str, args, done: set[str]) -> str | None:
                 "pin": pin,
                 "uri": uri,
                 "qr_png": str(png),
+                "status": "pending",
             },
         )
 
@@ -187,15 +265,23 @@ def provision(port: str, args, done: set[str]) -> str | None:
         bt.enabled = True
         bt.mode = config_pb2.Config.BluetoothConfig.PairingMode.FIXED_PIN
         bt.fixed_pin = int(pin)
-        node.writeConfig("bluetooth")  # the node reboots to apply it
-        print(f"[{port}] {address}: Bluetooth set to FIXED_PIN {pin}")
+        try:
+            node.writeConfig("bluetooth")  # the node reboots to apply it
+        except Exception:
+            set_csv_status(args.out / "provisioned.csv", address, pin, "write failed")
+            raise
+        print(f"[{port}] {address}: Bluetooth set to FIXED_PIN {pin}; checking it took...")
         done.add(address)
-        return address
     finally:
         try:
             iface.close()
         except Exception:  # the node may already be rebooting
             pass
+
+    status = verify_pin(port, address, pin, args)
+    set_csv_status(args.out / "provisioned.csv", address, pin, status)
+    print(f"[{port}] {address}: {status}")
+    return status
 
 
 def main() -> int:
@@ -234,24 +320,31 @@ def main() -> int:
         if any(p.device == args.port and looks_like_printer(p) for p in comports()):
             print(f"[{args.port}] looks like a label printer, not a node; skipping")
             return 1
-        return 0 if provision(args.port, args, done) else 1
+        return 0 if provision(args.port, args, done) == "verified" else 1
 
     seen = set() if args.include_existing else node_ports(comports())
     if seen:
         print(f"ignoring ports already present: {', '.join(sorted(seen))} (--include-existing)")
     print("waiting for a node to be plugged in... (Ctrl-C to stop)")
+    failures: dict[str, int] = {}
     try:
         while True:
             current = node_ports(comports())
-            for port in sorted(current - seen):
+            failures = {p: n for p, n in failures.items() if p in current}  # a replug starts over
+            retry = {p for p, n in failures.items() if n < PORT_ATTEMPTS}
+            for port in sorted((current - seen) | retry):
                 time.sleep(2)  # let the port finish enumerating
                 try:
-                    address = provision(port, args, done)
+                    status = provision(port, args, done)
+                    failures.pop(port, None)
                 except Exception as e:
-                    print(f"[{port}] failed: {e}")
-                    address = None
-                if args.once and address in done:
-                    return 0
+                    failures[port] = failures.get(port, 0) + 1
+                    left = PORT_ATTEMPTS - failures[port]
+                    then = f"retrying ({left} left)" if left else "replug it to try again"
+                    print(f"[{port}] failed: {e}; {then}")
+                    status = None
+                if args.once and status is not None:
+                    return 0 if status == "verified" else 1
             seen = current
             time.sleep(args.poll)
     except KeyboardInterrupt:

@@ -87,10 +87,17 @@ If labels come out flipped, add `--flip` (the old `--rotate 270` still works).
 for each node plugged in it:
 
 1. reads the node's BLE address (`DeviceMetadata.ble_address`),
-2. sets Bluetooth to `FIXED_PIN` with a random 6-digit PIN (the node reboots),
-3. writes a connect link and its QR code to `provisioned/<BLE MAC>.png`, and
-4. appends the node ID, hardware model, address, PIN and link to
-   `provisioned/provisioned.csv`.
+2. writes a connect link for a random 6-digit PIN and its QR code to
+   `provisioned/<BLE MAC>.png`,
+3. appends the node ID, hardware model, address, PIN and link to
+   `provisioned/provisioned.csv`,
+4. sets Bluetooth to `FIXED_PIN` with that PIN (the node reboots), and
+5. reconnects and reads the PIN back, recording the row's `status`: `verified`,
+   `mismatch` (the node did not take it), `unverified` (it never came back) or
+   `write failed`. Ship only `verified` rows.
+
+A node with WiFi on is skipped: ESP32 firmware keeps Bluetooth off while WiFi is
+configured. A port that fails is retried twice, then left until it is replugged.
 
 It installs with labeltastic (`pip install labeltastic` puts `labeltastic-provision`
 next to `labeltastic`), and needs no printer.
@@ -107,7 +114,7 @@ touched. `provisioned.csv` holds every PIN in clear text: treat it as a secret.
 
 Needs firmware that reports `ble_address` (meshtastic/firmware#12281). On older
 firmware the node is skipped; `--macaddr-fallback` uses the node's MAC instead,
-which is the BLE address on nRF52 only, not on ESP32. The PIN in the link needs
+which is the BLE address on nRF52 only, so it skips nodes that report WiFi. The PIN in the link needs
 a Meshtastic Android release with meshtastic/Meshtastic-Android#7856; older
 releases open the Connections screen and ignore it.
 
