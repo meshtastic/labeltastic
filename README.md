@@ -81,6 +81,72 @@ USB IDs aren't known here, so pass `--printer-port` explicitly for one.
 
 If labels come out flipped, add `--flip` (the old `--rotate 270` still works).
 
+## Provisioning nodes for QR pairing
+
+`labeltastic-provision` gets nodes ready to ship with a pairing QR code. It watches USB, and
+for each node plugged in it:
+
+1. reads the node's BLE address (`DeviceMetadata.ble_address`),
+2. sets Bluetooth to `FIXED_PIN` with a random 6-digit PIN (the node reboots),
+3. writes a connect link and its QR code to `provisioned/<BLE MAC>.png`, and
+4. appends the node ID, hardware model, address, PIN and link to
+   `provisioned/provisioned.csv`.
+
+It installs with labeltastic (`pip install labeltastic` puts `labeltastic-provision`
+next to `labeltastic`), and needs no printer.
+
+```bash
+labeltastic-provision                         # watch USB, provision each new node
+labeltastic-provision --port /dev/ttyACM0     # provision one node and exit
+labeltastic-provision --link app              # meshtastic:// links instead of https://
+```
+
+Nodes already plugged in at start are left alone unless you pass
+`--include-existing`. Ports that look like a Niimbot printer are never
+touched. `provisioned.csv` holds every PIN in clear text: treat it as a secret.
+
+Needs firmware that reports `ble_address` (meshtastic/firmware#12281). On older
+firmware the node is skipped; `--macaddr-fallback` uses the node's MAC instead,
+which is the BLE address on nRF52 only, not on ESP32. The PIN in the link needs
+a Meshtastic Android release with meshtastic/Meshtastic-Android#7856; older
+releases open the Connections screen and ignore it.
+
+### Connect links
+
+The Meshtastic Android app accepts the same connect link under two schemes:
+
+```text
+https://meshtastic.org/connections?address=x<BLE MAC>&pin=<PIN>
+meshtastic://meshtastic/connections?address=x<BLE MAC>&pin=<PIN>
+```
+
+| parameter | value |
+| --- | --- |
+| `address` | the device address with its transport prefix: `x` + BLE MAC (`xAC:27:6E:CD:5A:99`), `t` + host:port for TCP (`t192.168.1.1:4403`), or `n` to disconnect |
+| `pin` | optional, BLE only: the node's fixed pairing PIN, exactly 6 digits. Anything else is ignored and pairing asks as usual |
+
+Opening either link shows a "Connect to this device?" prompt with the address
+and PIN; nothing connects until the user confirms. On Connect the app copies
+the PIN to the clipboard (marked sensitive) and pairs. Up to Android 16 it
+enters the PIN itself; on Android 17 the system pairing dialog asks and the
+PIN can be pasted.
+
+| | `https://meshtastic.org/...` (`--link web`, default) | `meshtastic://meshtastic/...` (`--link app`) |
+| --- | --- | --- |
+| app installed | opens the app, once Android has verified it owns meshtastic.org links; otherwise the browser | always opens the app |
+| app not installed | opens meshtastic.org | nothing useful: the scanner shows text or "no app" |
+| QR scanners | all | some won't open a custom scheme |
+
+Use `https` on retail packaging, so a buyer without the app still lands
+somewhere; use `meshtastic://` where the app is known to be installed. To try a
+link on a phone over adb:
+
+```bash
+adb shell am start -a android.intent.action.VIEW \
+  -d "meshtastic://meshtastic/connections?address=xAC:27:6E:CD:5A:99&pin=317338"
+```
+
+
 ## Development
 
 ```bash
