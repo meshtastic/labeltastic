@@ -228,10 +228,13 @@ def main() -> int:
     args.out.mkdir(parents=True, exist_ok=True)
     done: set[str] = set()
 
-    if args.port:
-        return 0 if provision(args.port, args, done) else 1
-
     from serial.tools.list_ports import comports
+
+    if args.port:
+        if any(p.device == args.port and looks_like_printer(p) for p in comports()):
+            print(f"[{args.port}] looks like a label printer, not a node; skipping")
+            return 1
+        return 0 if provision(args.port, args, done) else 1
 
     seen = set() if args.include_existing else node_ports(comports())
     if seen:
