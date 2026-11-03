@@ -37,6 +37,8 @@ def test_ble_address_survives_a_meshtastic_without_the_field():
     md = metadata_with_ble_address(ADDR.lower())
     assert md.firmware_version == "2.8.0"
     assert ble_address_from_metadata(md) == ADDR
+    # Direct, so the raw path stays covered once meshtastic knows field 17.
+    assert raw_string_field(md.SerializeToString(), BLE_ADDRESS_FIELD) == ADDR.lower()
 
 
 def test_no_ble_address_reads_as_empty():

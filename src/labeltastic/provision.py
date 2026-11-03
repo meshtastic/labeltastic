@@ -158,7 +158,7 @@ def provision(port: str, args, done: set[str]) -> str | None:
         if not ADDRESS_RE.match(address):
             print(f"[{port}] firmware reported no BLE address (needs firmware#12281); skipping")
             return None
-        if address in done and not args.force:
+        if address in done:
             print(f"[{port}] {address} already done this run (it rebooted after the PIN change)")
             return address
 
@@ -217,9 +217,6 @@ def main() -> int:
         "--include-existing", action="store_true", help="also provision nodes plugged in at start"
     )
     ap.add_argument("--once", action="store_true", help="exit after the first node is provisioned")
-    ap.add_argument(
-        "--force", action="store_true", help="re-provision a node already done this run"
-    )
     ap.add_argument(
         "--macaddr-fallback",
         action="store_true",
