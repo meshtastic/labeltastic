@@ -27,5 +27,5 @@
 - [src/labeltastic/kiosk.py](src/labeltastic/kiosk.py): the mesh listener, job queue and watchdogs
 - [src/labeltastic/provision.py](src/labeltastic/provision.py): `labeltastic-provision`, which
   sets a random fixed BLE PIN per node and writes its connect link
-  (`https://meshtastic.org/connections?address=x<MAC>&pin=<PIN>`, or `meshtastic://meshtastic/...`) and QR
+  (`meshtastic://meshtastic/connections?address=x<MAC>&pin=<PIN>`, or `https://meshtastic.org/...` with `--link web`) and QR
 - [src/labeltastic/_vendor/](src/labeltastic/_vendor/README.md): vendored niimprint (MIT)

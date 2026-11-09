@@ -105,7 +105,7 @@ next to `labeltastic`), and needs no printer.
 ```bash
 labeltastic-provision                         # watch USB, provision each new node
 labeltastic-provision --port /dev/ttyACM0     # provision one node and exit
-labeltastic-provision --link app              # meshtastic:// links instead of https://
+labeltastic-provision --link web              # https:// links, Android only
 ```
 
 Nodes already plugged in at start are left alone unless you pass
@@ -120,12 +120,15 @@ releases open the Connections screen and ignore it.
 
 ### Connect links
 
-The Meshtastic Android app accepts the same connect link under two schemes:
+The connect link is specified in meshtastic/design#177:
 
 ```text
-https://meshtastic.org/connections?address=x<BLE MAC>&pin=<PIN>
 meshtastic://meshtastic/connections?address=x<BLE MAC>&pin=<PIN>
 ```
+
+The Android app also accepts the same path under `https://meshtastic.org`. The
+iOS app does not open either form yet (meshtastic/Meshtastic-Apple#2955), so an
+iPhone user pairs by hand with the PIN from `provisioned.csv`.
 
 | parameter | value |
 | --- | --- |
@@ -138,15 +141,11 @@ the PIN to the clipboard (marked sensitive) and pairs. Up to Android 16 it
 enters the PIN itself; on Android 17 the system pairing dialog asks and the
 PIN can be pasted.
 
-| | `https://meshtastic.org/...` (`--link web`, default) | `meshtastic://meshtastic/...` (`--link app`) |
-| --- | --- | --- |
-| app installed | opens the app, once Android has verified it owns meshtastic.org links; otherwise the browser | always opens the app |
-| app not installed | opens meshtastic.org | nothing useful: the scanner shows text or "no app" |
-| QR scanners | all | some won't open a custom scheme |
-
-Use `https` on retail packaging, so a buyer without the app still lands
-somewhere; use `meshtastic://` where the app is known to be installed. To try a
-link on a phone over adb:
+The default, `--link app`, writes the `meshtastic://` form. `--link web` writes
+the `https://` form, which opens only the Android app: meshtastic.org has no
+page at `/connections` and does not hand it to the iOS app. Without the app
+installed, neither form opens anything useful. To try a link on a phone over
+adb:
 
 ```bash
 adb shell am start -a android.intent.action.VIEW \

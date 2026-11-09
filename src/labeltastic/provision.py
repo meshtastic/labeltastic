@@ -6,15 +6,18 @@ Watches for nodes plugged in over USB. For each one it reads the node's BLE
 address, sets Bluetooth to FIXED_PIN with a random 6-digit PIN, and writes a
 connect link plus a QR code for it, e.g.
 
-  https://meshtastic.org/connections?address=xAA:BB:CC:DD:EE:FF&pin=123456
+  meshtastic://meshtastic/connections?address=xAA:BB:CC:DD:EE:FF&pin=123456
 
 Scanning that opens the Meshtastic Android app on its Connect prompt with the
-PIN filled in. Every provisioned node is appended to provisioned.csv.
+PIN shown. The iOS app does not open it yet (meshtastic/Meshtastic-Apple#2955),
+so an iPhone user pairs by hand with the PIN from provisioned.csv. Every
+provisioned node is appended to provisioned.csv. The link format is
+meshtastic/design#177.
 
 Usage:
   labeltastic-provision                       # watch USB, provision each new node
   labeltastic-provision --port /dev/ttyACM0   # provision one node and exit
-  labeltastic-provision --link app            # meshtastic:// links instead of https://
+  labeltastic-provision --link web            # https:// links, Android only
 
 The BLE address comes from DeviceMetadata.ble_address (firmware with
 meshtastic/firmware#12281). On older firmware, --macaddr-fallback uses the
@@ -39,8 +42,8 @@ import qrcode
 from .ports import looks_like_printer
 
 LINK_BASES = {
-    "web": "https://meshtastic.org",  # verified app link; falls back to the website without the app
-    "app": "meshtastic://meshtastic",  # straight into the app; nothing useful without it
+    "app": "meshtastic://meshtastic",  # the canonical form (meshtastic/design#177)
+    "web": "https://meshtastic.org",  # an Android app link only; iOS and the website don't handle it
 }
 BLE_ADDRESS_FIELD = 17  # DeviceMetadata.ble_address
 ADDRESS_RE = re.compile(r"^[0-9A-F]{2}(:[0-9A-F]{2}){5}$")
@@ -295,9 +298,9 @@ def main() -> int:
     ap.add_argument(
         "--link",
         choices=sorted(LINK_BASES),
-        default="web",
-        help="web = https://meshtastic.org/connections?... (opens the app, or the website "
-        "without it); app = meshtastic://meshtastic/connections?... (app only)",
+        default="app",
+        help="app = meshtastic://meshtastic/connections?... (default); web = "
+        "https://meshtastic.org/connections?... (opens the Android app only)",
     )
     ap.add_argument(
         "--include-existing", action="store_true", help="also provision nodes plugged in at start"
