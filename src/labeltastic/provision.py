@@ -8,9 +8,11 @@ connect link plus a QR code for it, e.g.
 
   meshtastic://meshtastic/connections?address=xAA:BB:CC:DD:EE:FF&pin=123456
 
-Scanning that opens the Meshtastic app on its Connect prompt with the PIN
-shown. Every provisioned node is appended to provisioned.csv. The link format
-is meshtastic/design#177.
+Scanning that opens the Meshtastic Android app on its Connect prompt with the
+PIN shown. The iOS app does not open it yet (meshtastic/Meshtastic-Apple#2955),
+so an iPhone user pairs by hand with the PIN from provisioned.csv. Every
+provisioned node is appended to provisioned.csv. The link format is
+meshtastic/design#177.
 
 Usage:
   labeltastic-provision                       # watch USB, provision each new node

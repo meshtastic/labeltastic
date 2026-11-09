@@ -126,7 +126,9 @@ The connect link is specified in meshtastic/design#177:
 meshtastic://meshtastic/connections?address=x<BLE MAC>&pin=<PIN>
 ```
 
-The Android app also accepts the same path under `https://meshtastic.org`.
+The Android app also accepts the same path under `https://meshtastic.org`. The
+iOS app does not open either form yet (meshtastic/Meshtastic-Apple#2955), so an
+iPhone user pairs by hand with the PIN from `provisioned.csv`.
 
 | parameter | value |
 | --- | --- |
