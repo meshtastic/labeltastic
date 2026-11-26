@@ -31,7 +31,7 @@ and the mark bottom-right](docs/printed-badges.jpg)
 
   | `--printer` | head | labels | layout |
   |---|---|---|---|
-  | `d110` (default) | 12 mm / 96 dots | continuous roll, or `--die-cut` labels (30 mm long; others with `--label-length`) | dynamic-length banner, or a compact name tag: QR left, HELLO MY NODE IS band, names, emoji on the right |
+  | `d110` (default) | 12 mm / 96 dots | continuous roll, or `--die-cut` labels (30 mm long; others with `--label-length`) | dynamic-length banner, or a compact name tag: QR left, names (under a HELLO MY NODE IS band from 40 mm up), emoji on the right |
   | `b1` | 48 mm / 384 dots | 50x30 mm die-cut | landscape card: header band, name block, QR right |
 
   The 50x30 mm stock is 50 mm across the roll and 30 mm along the feed, so

@@ -136,10 +136,14 @@ def node(short, long_):
 
 
 NAME_CASES = [
-    node("🐛 WPG", "Wandering Packet Goblin"),  # emoji and letters: flair plus a big short name
+    node(
+        "WPG", "Wandering Packet Goblin"
+    ),  # four characters: the big line, long name wraps on 30 mm
     node("🥧", "Meshtastic 9cc3"),  # emoji only: the long name becomes the big line
     node("KX9Q", "Ridge Top Solar"),  # no emoji: no flair
     node("BASE", "North Ridge Solar Router"),  # long name wraps on 30 mm
+    node("🏔️", "Mount Rainier Summit Relay Node"),  # tall emoji, three-line long name
+    node("🛰️", "Sat"),  # short long name: the biggest text
 ]
 
 
