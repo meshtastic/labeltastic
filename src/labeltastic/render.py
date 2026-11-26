@@ -10,13 +10,13 @@ layout a printer and label stock select.
 from PIL import Image, ImageDraw
 
 from .contact import name_lines, qr_image
-from .fonts import draw_mixed, fit, mixed_len, text_font
+from .fonts import condensed_font, draw_mixed, fit, is_emoji, mixed_len, text_font
 from .logo import mpwrd_logo
 
 MAX_NAME_PX = 340  # cap on the name column in banner mode
 
 BANNER_LOGO_PX = 64  # a column of its own on the endless roll
-COMPACT_LOGO_PX = 24  # bare Ms, so this is height of mark not of frame
+COMPACT_LOGO_PX = 18  # bare Ms, so this is height of mark not of frame
 
 
 def render_banner(node, profile):
@@ -66,29 +66,121 @@ def render_banner(node, profile):
     return label
 
 
-def render_compact(node, profile):
-    """Fixed 30x15 layout for gap-sensed die-cut labels: QR left, text right.
+# Die-cut labels end where the gap sensor says, give or take a few rows, so ink
+# keeps this far from both ends of the label.
+COMPACT_END_PX = 3
+# 12 mm stock is exactly the head's 96 dots, so text keeps this far from the top
+# and bottom edges. The QR doesn't: a keyed contact needs all 96 at 2 dots/module.
+COMPACT_EDGE_PX = 2
+# Below this the text column counts as narrow (30 mm labels): the band gets more
+# height for its squeezed words, which the node ID pays for.
+COMPACT_NARROW_PX = 180
 
+
+def band(label, d, x, y, w, h, text, size):
+    """Black band with white text as tall as the band allows and 4 dots of black
+    each side. Condensed face; if it is still too wide it is squeezed sideways
+    rather than made shorter, because height is what reads from a step away."""
+    d.rectangle([x, y, x + w - 1, y + h - 1], fill=0)
+    f = condensed_font(size)
+    left, top, right, bottom = d.textbbox((0, 0), text, font=f, anchor="ls")
+    word = Image.new("L", (right - left, bottom - top), 0)
+    ImageDraw.Draw(word).text((-left, -top), text, font=f, anchor="ls", fill=255)
+    room = w - 8
+    if word.width > room:
+        word = word.resize((room, word.height), Image.Resampling.LANCZOS)
+        # Grey from the resample would dither into noise at niimprint's convert("1").
+        word = word.point(lambda v: 255 if v >= 128 else 0)
+    label.paste(255, (x + (w - word.width) // 2, y + (h - word.height) // 2), word)
+
+
+def wrap_two(d, text, width, start, min_size):
+    """Split text at a space into two lines that each fit width, largest size first.
+    None when it has no space or no size fits."""
+    words = text.split()
+    for size in range(start, min_size - 1, -1):
+        for i in range(len(words) - 1, 0, -1):
+            a, b = " ".join(words[:i]), " ".join(words[i:])
+            if mixed_len(d, a, size) <= width and mixed_len(d, b, size) <= width:
+                return (a, b), size
+    return None
+
+
+def render_compact(node, profile):
+    """Name tag for gap-sensed die-cut labels, any length: QR left, then a HELLO MY
+    NODE IS band over the names, the node ID and mark on the bottom row.
+
+    Emoji in the short name come off the name line and sit on the right, above the
+    mark, like a pin on a name tag; an emoji-only short name lets the long name be
+    the big line. Long names wrap to two lines rather than shrinking past reading.
     Reads along the feed, same as the banner."""
     across, length = profile.head_px, profile.die_len_px
     label = Image.new("L", (length, across), 255)
-    label.paste(qr_image(node, across), (0, 0))
     d = ImageDraw.Draw(label)
+    e = COMPACT_EDGE_PX
+
+    # qr_image centres the code in an across x across square; keep only its width,
+    # ink plus a one-module quiet zone, so the text column gets the slack.
+    qr = qr_image(node, across)
+    ink = qr.point(lambda v: 255 if v < 128 else 0).getbbox()
+    if ink:
+        qr = qr.crop((max(0, ink[0] - 2), 0, min(across, ink[2] + 2), across))
+    label.paste(qr, (COMPACT_END_PX, 0))
+    x = COMPACT_END_PX + qr.width + 6
+    width = length - x - COMPACT_END_PX
+    narrow = width < COMPACT_NARROW_PX
+
+    band_h = 26 if narrow else 22
+    band(label, d, x, e, width, band_h, "HELLO MY NODE IS", 22 if narrow else 21)
+    top = e + band_h
+
     logo = mpwrd_logo(COMPACT_LOGO_PX, frame=False)
-    label.paste(logo, (length - 2 - logo.width, across - 4 - logo.height))
-    x = across + 6
-    width = length - x - 2
+    label.paste(logo, (length - COMPACT_END_PX - logo.width, across - e - logo.height))
+
     short, long_, nid = name_lines(node)
-    # Only the node ID gives up width to the mark. Node IDs are 9 characters, so
-    # the column it leaves is still roomy, while the names keep the full width —
-    # they are what anyone actually reads off the badge.
-    for text, start, y, w in (
-        (short, 34, 22, width),
-        (long_, 16, 56, width),
-        (nid, 12, 81, width - logo.width - 6),
-    ):
-        text, size = fit(d, text, w, start)
-        draw_mixed(d, (x, y), text, size, 0)
+    flair = "".join(c for c in short if is_emoji(c))
+    letters = "".join(c for c in short if not is_emoji(c)).strip()
+    text_w = width
+    if flair:
+        # Fill the space above the mark, but on a short label stop at a quarter of
+        # the column so the names keep their room (never under 26: still a picture).
+        size = across - e - logo.height - 4 - top - 2
+        while size > 26 and mixed_len(d, flair, size) > max(26, width // 4):
+            size -= 1
+        flair_w = int(mixed_len(d, flair, size))
+        draw_mixed(d, (length - COMPACT_END_PX - flair_w, top + 2 + size // 2), flair, size, 0)
+        text_w = width - flair_w - 6
+
+    if letters:
+        text, size = fit(d, long_, text_w, 18)
+        lines = wrap_two(d, long_, text_w, 13, 11) if size < 12 else None
+        if lines:
+            # The short name gives up a little height for the long name's second line.
+            (a, b), line = lines
+            short_text, short_size = fit(d, letters, text_w, 22 if narrow else 24)
+            draw_mixed(d, (x, top + 11), short_text, short_size, 0)
+            draw_mixed(d, (x, top + 27), a, line, 0)
+            draw_mixed(d, (x, top + 27 + line), b, line, 0)
+        else:
+            short_text, short_size = fit(d, letters, text_w, 30 if narrow else 32)
+            draw_mixed(d, (x, top + 15), short_text, short_size, 0)
+            draw_mixed(d, (x, top + (37 if narrow else 40)), text, size, 0)
+        id_y = across - e - 9
+    else:
+        # Nothing but emoji in the short name: the long name is the name people read.
+        text, size = fit(d, long_, text_w, 26)
+        lines = wrap_two(d, long_, text_w, 18, 13) if size < 15 else None
+        if lines:
+            (a, b), line = lines
+            draw_mixed(d, (x, top + 11), a, line, 0)
+            draw_mixed(d, (x, top + 13 + line), b, line, 0)
+        else:
+            draw_mixed(d, (x, top + 20), text, size, 0)
+        id_y = top + 48
+
+    # The node ID is what people copy down, so it stays readable.
+    text, size = fit(d, nid, width - logo.width - 6, 14 if narrow else 16)
+    draw_mixed(d, (x, id_y), text, size, 0)
     return label
 
 

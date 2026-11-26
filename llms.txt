@@ -7,7 +7,7 @@
 > app (>= 2.6) to add you as a contact, PKC public key included. Built at DEFCON 34.
 >
 > Two printers: the D110 (12 mm head — dynamic-length banner on a continuous roll, or a
-> compact card on 30x15 mm die-cut) and the B1 (48 mm head — landscape card on 50x30 mm).
+> compact name tag on die-cut labels of any length, 30 mm by default) and the B1 (48 mm head — landscape card on 50x30 mm).
 > `labeltastic --sample --dry-run` renders and encodes a canned node with no hardware
 > attached at all.
 
