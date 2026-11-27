@@ -4,7 +4,7 @@
 that selects, and how the authored label is turned to face the head."""
 
 from collections import namedtuple
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from PIL import Image
 
@@ -54,12 +54,12 @@ PROFILES = {
         name="d110",
         head_px=96,
         die_len_px=236,
-        die_layout=Layout(render_compact, 90, "compact 30x15"),
+        die_layout=Layout(render_compact, 90, "compact name tag"),
         roll_layout=Layout(render_banner, 90, "banner"),
         default_label_type=3,  # no tag — assume the endless roll they planned on
         max_density=3,  # upstream caps d11/d110/b18 here
         min_protocol=0,
-        desc="12 mm head, 30x15 mm die-cut or continuous roll",
+        desc="12 mm head, die-cut (30 mm unless --label-length) or continuous roll",
     ),
     "b1": Profile(
         name="b1",
@@ -76,6 +76,16 @@ PROFILES = {
         desc="48 mm head, 50x30 mm die-cut labels",
     ),
 }
+
+
+# Rows held back from a die-cut label's length so the raster never overruns the gap.
+DIE_SLACK_PX = 4
+
+
+def with_label_length(profile, mm):
+    """The profile for die-cut labels `mm` long along the feed (the 30 in the D110's
+    "30x15"), instead of the stock it assumes."""
+    return replace(profile, die_len_px=round(mm * DOTS_PER_MM) - DIE_SLACK_PX)
 
 
 def roll_label_type(client, args, profile):

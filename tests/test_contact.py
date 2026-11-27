@@ -25,7 +25,7 @@ def test_contact_url_round_trips():
     assert sc.node_num == SAMPLE_NODE["num"]
     assert sc.user.id == "!deadbeef"
     assert sc.user.long_name == "Wandering Packet Goblin"
-    assert sc.user.short_name == "🐛 WPG"
+    assert sc.user.short_name == "🐛"
     assert sc.user.public_key == bytes(range(32))
 
 

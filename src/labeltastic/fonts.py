@@ -19,6 +19,12 @@ TEXT_FONTS = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/System/Library/Fonts/Supplemental/Arial Bold.ttf",  # dev on mac
 ]
+# For the HELLO MY NODE IS band on narrow labels: same family, narrower letters.
+# fonts-dejavu-core ships the condensed face alongside the regular one.
+CONDENSED_FONTS = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Narrow Bold.ttf",  # dev on mac
+]
 EMOJI_FONTS = [
     str(ASSETS / "NotoEmoji-Regular.ttf"),
     "/usr/share/fonts/truetype/noto/NotoEmoji-Regular.ttf",
@@ -39,6 +45,10 @@ def _first_font(candidates, size):
 
 def text_font(size):
     return _first_font(TEXT_FONTS, size) or ImageFont.load_default(size)
+
+
+def condensed_font(size):
+    return _first_font(CONDENSED_FONTS, size) or text_font(size)
 
 
 def emoji_font(size):

@@ -64,12 +64,14 @@ def qr_image(node, side, min_module_px=2):
 # --sample: the public key is 2/3 of the QR payload, so a node without one
 # renders a comfortably small QR and proves nothing about the real thing. The
 # emoji and the long name exercise clean()/draw_mixed() and fit()'s ellipsizing.
+# A short name is 4 bytes at most, so it is one emoji or up to four characters,
+# never both: the sample is the one emoji, as a real node's would be.
 SAMPLE_NODE = {
     "num": 0xDEADBEEF,
     "user": {
         "id": "!deadbeef",
         "longName": "Wandering Packet Goblin",
-        "shortName": "🐛 WPG",
+        "shortName": "🐛",
         "publicKey": base64.b64encode(bytes(range(32))).decode(),
         "hwModel": "HELTEC_V3",
     },

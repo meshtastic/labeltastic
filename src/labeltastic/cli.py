@@ -31,7 +31,7 @@ from .fonts import HAS_EMOJI
 from .kiosk import Kiosk
 from .ports import resolve_ports
 from .printing import print_label, probe_printer
-from .profiles import PROFILES
+from .profiles import PROFILES, with_label_length
 
 
 def main():
@@ -59,6 +59,14 @@ def main():
         action="store_true",
         help="gap-sensed die-cut labels instead of a continuous roll",
     )
+    p.add_argument(
+        "--label-length",
+        type=float,
+        default=None,
+        metavar="MM",
+        help="die-cut label length along the feed, in mm (default: the printer's stock, "
+        "30 mm on the D110); the compact layout stretches to fit",
+    )
     p.add_argument("--flip", action="store_true", help="rotate 180 if labels come out upside down")
     p.add_argument(
         "--rotate", type=int, choices=[90, 270], default=None, help=argparse.SUPPRESS
@@ -84,6 +92,8 @@ def main():
     if args.rotate == 270:  # --rotate 90 was the default, 270 meant "upside down"
         args.flip = True
     profile = PROFILES[args.printer]
+    if args.label_length:
+        profile = with_label_length(profile, args.label_length)
     if args.density > profile.max_density:
         print(
             f"note: {profile.name} maxes out at density {profile.max_density}, "

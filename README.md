@@ -31,13 +31,18 @@ and the mark bottom-right](docs/printed-badges.jpg)
 
   | `--printer` | head | labels | layout |
   |---|---|---|---|
-  | `d110` (default) | 12 mm / 96 dots | continuous roll, or `--die-cut` 30x15 mm | dynamic-length banner, or a compact QR-left card |
+  | `d110` (default) | 12 mm / 96 dots | continuous roll, or `--die-cut` labels (30 mm long; others with `--label-length`) | dynamic-length banner, or a compact name tag: QR left, names (under a HELLO MY NODE IS band from 40 mm up), emoji on the right |
   | `b1` | 48 mm / 384 dots | 50x30 mm die-cut | landscape card: header band, name block, QR right |
 
   The 50x30 mm stock is 50 mm across the roll and 30 mm along the feed, so
   the B1 card is laid out across the head instead of along it. Its QR gets
   3 printer dots per module against the D110's 2, which means full long
   names survive into the QR payload instead of being truncated.
+
+  D110 die-cut labels come in several lengths. The compact name tag
+  stretches to whichever you load: pass its length along the feed in mm,
+  e.g. `--die-cut --label-length 40` for 12x40 mm stock. On a short label
+  long names wrap to two lines rather than shrinking past reading.
 
 ![Close-up of the card layout as printed, showing the header band, emoji,
 names, node ID and QR at full detail](docs/badge-closeup.jpg)
@@ -190,6 +195,6 @@ printer prints blank and reports success).
   thresholded rather than left anti-aliased, because niimprint dithers any
   grey it is handed and that turns a mark this small into noise. Only the
   banner prints the whole logo, in a column of its own — it can just grow.
-  The B1 card and the compact 30x15 layout print the bare Ms, no border and
+  The B1 card and the D110 compact name tag print the bare Ms, no border and
   no wordmark: PWRD is a fifth of the frame's height, so a logo sized to fit
   the space those two had spare sets it under a millimetre.
